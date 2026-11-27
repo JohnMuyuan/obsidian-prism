@@ -373,4 +373,9 @@ test('Channel 1 size budget, Channel 6 XSS/CSS hygiene, A3 attrs, and C#/Swift C
   assert.ok(csCdp.includes('BuildInlineDiffExpression') && csCdp.includes('InlineDiffRemoveExpression'));
   assert.ok(swiftCdp.includes('buildInlineDiffExpression') && swiftCdp.includes('inlineDiffRemoveExpression'));
   assert.ok(csCdp.includes('__agPrismInlineDiff?.destroy?.()') && swiftCdp.includes('__agPrismInlineDiff?.destroy?.()'));
+
+  // 5) Native entity-pill preservation & inlineDiff='off' config toggle
+  assert.equal(styleCss.includes('& :is([data-testid="entity-pill"],.inline-pill){'), false, 'style.css must preserve native file pill styling without extra box/border');
+  assert.equal(cdp.validateConfigEntry('inlineDiff', 'off'), true, 'inlineDiff=off must be valid');
+  assert.equal(cdp.validateConfigEntry('inlineDiff', 'on'), true, 'inlineDiff=on must be valid');
 });

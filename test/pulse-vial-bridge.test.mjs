@@ -1621,3 +1621,67 @@ test('WO-MAIN-001B: pulse-vial-bridge writes data-pv-warn="1" at >=80% and clear
     if (prevDoc !== undefined) globalThis.document = prevDoc;
   }
 });
+
+test('disableVial: true locks flat bar mode, ignores stale localStorage="vial", omits .pv-rail/.pv-btn/canvas, stays 0fps, and strips blur(22px)/glossy bevels', async () => {
+  const env = createPulseMockEnv();
+  env.storage.setItem(bridgeMod.STORAGE_KEY, 'vial');
+  const host = env.getPulseHost();
+  const sr = host.shadowRoot;
+  let mountCalls = 0;
+  const spyVialCore = {
+    mountPhysicalWaterVial() {
+      mountCalls++;
+      return vialCore.mountPhysicalWaterVial(...arguments);
+    },
+  };
+  const prevDoc = globalThis.document;
+  delete globalThis.document;
+  let bridge;
+  try {
+    bridge = bridgeMod.mountPulseVialBridge({
+      win: env.win,
+      doc: env.doc,
+      storage: env.storage,
+      vialCore: spyVialCore,
+      defaultMode: 'bar',
+      disableVial: true,
+      autoPoll: false,
+      allowMultiple: true,
+    });
+    const st = await bridge.sync();
+    assert.equal(st.attached, true);
+    assert.equal(st.mode, 'bar');
+    assert.equal(st.vialMounted, false);
+    assert.equal(st.rafActive, false);
+    assert.equal(mountCalls, 0, 'vial-core must NEVER mount when disableVial is true');
+    assert.equal(env.win.getPendingRafCount(), 0, 'Zero rAF must be scheduled when disableVial is true');
+    assert.equal(sr.querySelector('canvas[data-vial-canvas="true"]'), null, 'No vial canvas may exist');
+    assert.equal(sr.querySelector('.pv-rail'), null, 'No vial rail may exist');
+    assert.equal(sr.querySelector('[data-ag-pulse-vial-toggle="1"]'), null, 'No vial toggle button may exist');
+    assert.ok(sr.querySelector('.pv-bw'), 'Flat 3-segment minibar must still render');
+    assert.equal(sr.getElementById('context-card').getAttribute('data-ag-pulse-card-width'), '304');
+
+    // Attempt to re-enable vial via API must remain locked in bar mode
+    bridge.setVialEnabled(true);
+    assert.equal(bridge.getDebugState().mode, 'bar');
+    assert.equal(mountCalls, 0);
+
+    // Flat CSS assertions: zero blur(22px), zero blur(4px) open filter, transparent specular bevel, valid .pv-cb>i fill, balanced parens
+    const css = sr.querySelector('style[data-ag-cs-pulse-style="1"]')?.textContent || '';
+    assert.equal(css.includes('blur(22px)'), false, 'Context card must drop heavy blur(22px)');
+    assert.equal(css.includes('filter:blur(4px)'), false, 'Context card open animation must drop filter:blur(4px)');
+    assert.ok(css.includes('--bf:none'), 'Host backdrop-filter token must be none');
+    assert.ok(css.includes('--sp:transparent'), 'Specular bevel token must be transparent');
+    assert.equal(css.includes('linear-gradient(#fff4'), false, 'Minibar segments must be flat without glossy sheen');
+    assert.ok(css.includes('background:var(--pv-tint,#3186ff)}'), '.pv-cb>i fill declaration must have valid balanced var() syntax');
+    for (const rule of css.split('}')) {
+      const body = rule.split('{')[1] || '';
+      for (const decl of body.split(';')) {
+        assert.equal((decl.match(/\(/g) || []).length, (decl.match(/\)/g) || []).length, `Unbalanced parens in pulse CSS: ${decl}`);
+      }
+    }
+  } finally {
+    bridge?.destroy();
+    if (prevDoc !== undefined) globalThis.document = prevDoc;
+  }
+});

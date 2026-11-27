@@ -67,6 +67,8 @@
       `${S} .ag-cs-subtab-btn[aria-selected="true"]{background:var(--_k2);box-shadow:var(--_ks2);color:var(--foreground);font-weight:600;}`,
       `${S} .ag-cs-settings-groups{display:flex;flex-direction:column;gap:12px;}`,
       `${S} .ag-cs-settings-group{display:flex;flex-direction:column;gap:6px;}`,
+      `@keyframes ag-cs-subtab-in{from{opacity:0;transform:translate3d(0,4px,0);}to{opacity:1;transform:none;}}`,
+      `@media (prefers-reduced-motion:no-preference){html[data-ag-cs-style]:not([data-ag-cs-motion="off"]) #ag-cs-settings-sec .ag-cs-settings-group:not([hidden]){animation:ag-cs-subtab-in 140ms var(--ag-ease-out,cubic-bezier(.22,1,.36,1)) both;}}`,
       `${S} .ag-cs-cfg-footer{margin-top:2px;padding:11px 14px;border-radius:12px;border:1px solid var(--_kb);background:var(--_k0);box-shadow:inset 0 1px 0 rgba(255,255,255,.045);}`,
       `${S} .ag-cs-cfg-meta{display:flex;flex-direction:column;gap:2px;min-width:180px;flex:1;}`,
       `${S} .ag-cs-cfg-title{font-size:12px;font-weight:600;color:var(--foreground);}`,
@@ -180,6 +182,7 @@
     thoughtView: mkSp(['immersive', 'bilingual']),
     telemetryModule: S_AUTO,
     effortSliderModule: S_AUTO,
+    effortPanelLayout: mkSp(['codex', 'classic']),
     effortMemory: S_ON,
     periodicModelPicker: S_ON,
     omniModule: S_ON,
@@ -1709,6 +1712,16 @@
       restoreSelectedDescTpl: '将温和关闭 Antigravity，把所选批次（{0}）全部文件无损移回对话库并自动重启。',
       restoreScriptBtn: '生成离线还原脚本',
       restoreScriptReadyTpl: '还原脚本就绪（{0}），退出 Antigravity 后运行：{1}',
+      oldMainRestartBtn: '一键归档旧主对话并重启',
+      mainHeavyOk: '无待归档子代理（主对话占比较高）',
+      noSubarchHint: '当前可归档的已结束子代理为 0 项，无需重启。如需归档 >14 天旧主对话（保留最近 20 条），可展开下方「存储明细与无损归档工作台」。',
+      lastMovedTpl: '上次归档：已移动 {0} 项（{1}）',
+      lastRestoredTpl: '上次还原：已恢复 {0} 项',
+      lastErrTpl: '上次任务失败：{0}',
+      guardMuteTitle: '后台超限提醒弹窗',
+      guardMuteDesc: '仅在存在可归档子代理或后台内存 ≥ 4 GB 时提醒；关闭后永久静音不再弹出',
+      guardMuteOn: '开启提醒',
+      guardMuteOff: '永久关闭',
     }),
     'zh-TW': O.freeze({
       summary: '儲存明細與無損封存工作台',
@@ -1723,6 +1736,16 @@
       restoreSelectedDescTpl: '將溫和關閉 Antigravity，把所選批次（{0}）全部檔案無損移回對話庫並自動重啟。',
       restoreScriptBtn: '產生離線還原腳本',
       restoreScriptReadyTpl: '還原腳本就緒（{0}），退出 Antigravity 後執行：{1}',
+      oldMainRestartBtn: '一鍵封存舊主對話並重啟',
+      mainHeavyOk: '無待封存子代理（主對話佔比較高）',
+      noSubarchHint: '目前可封存的已結束子代理為 0 項，無需重啟。如需封存 >14 天舊主對話（保留最近 20 筆），請展開下方「儲存明細與無損封存工作台」。',
+      lastMovedTpl: '上次封存：已移動 {0} 項（{1}）',
+      lastRestoredTpl: '上次還原：已恢復 {0} 項',
+      lastErrTpl: '上次任務失敗：{0}',
+      guardMuteTitle: '背景超限提醒彈窗',
+      guardMuteDesc: '僅在有可封存子代理或背景記憶體 ≥ 4 GB 時提醒；關閉後永久靜音不再彈出',
+      guardMuteOn: '開啟提醒',
+      guardMuteOff: '永久關閉',
     }),
     en: O.freeze({
       summary: 'Storage Details & Lossless Archive Workbench',
@@ -1737,6 +1760,16 @@
       restoreSelectedDescTpl: 'Will close Antigravity gracefully, restore the selected batch ({0}) losslessly, and relaunch.',
       restoreScriptBtn: 'Offline Restore Script',
       restoreScriptReadyTpl: 'Restore script ready ({0}). Quit Antigravity & run: {1}',
+      oldMainRestartBtn: 'Archive >14d Main & Restart',
+      mainHeavyOk: '0 archivable subagents (mostly main chats)',
+      noSubarchHint: 'No finished subagents (>2h) are ready to archive right now. To archive main chats older than 14 days (keeping the latest 20), open the Storage Details drawer below.',
+      lastMovedTpl: 'Last archive: moved {0} ({1})',
+      lastRestoredTpl: 'Last restore: recovered {0}',
+      lastErrTpl: 'Last task failed: {0}',
+      guardMuteTitle: 'Storage Guard Reminder Banner',
+      guardMuteDesc: 'Only prompts when archivable subagents exist or background RAM >= 4 GB; mute to disable permanently',
+      guardMuteOn: 'Reminders On',
+      guardMuteOff: 'Mute Forever',
     }),
     ja: O.freeze({
       summary: 'ストレージ詳細・無損失アーカイブ管理',
@@ -1751,6 +1784,16 @@
       restoreSelectedDescTpl: 'Antigravity を安全終了し、選択したバッチ（{0}）を無損失で復元して再起動します。',
       restoreScriptBtn: 'オフライン復元スクリプト',
       restoreScriptReadyTpl: '復元スクリプト準備完了（{0}）。Antigravity 終了後に実行：{1}',
+      oldMainRestartBtn: '>14日主会話を退避して再起動',
+      mainHeavyOk: '退避対象のサブエージェントなし（主会話中心）',
+      noSubarchHint: '退避対象の完了済みサブエージェントは 0 件です。14日超の主会話を退避するには下の「ストレージ詳細」を開いてください。',
+      lastMovedTpl: '前回アーカイブ：{0} 件移動（{1}）',
+      lastRestoredTpl: '前回復元：{0} 件復元',
+      lastErrTpl: '前回エラー：{0}',
+      guardMuteTitle: '容量・メモリ警告バナー',
+      guardMuteDesc: '退避可能サブエージェントがあるかメモリ 4 GB 超のときのみ表示；永久ミュート可',
+      guardMuteOn: '通知オン',
+      guardMuteOff: '永久オフ',
     }),
     ko: O.freeze({
       summary: '저장소 상세 및 무손실 아카이브 작업대',
@@ -1765,6 +1808,16 @@
       restoreSelectedDescTpl: 'Antigravity를 정상 종료하고 선택한 배치({0})를 무손실 복원한 뒤 자동 재시작합니다.',
       restoreScriptBtn: '오프라인 복원 스크립트',
       restoreScriptReadyTpl: '복원 스크립트 준비됨 ({0}). Antigravity 종료 후 실행: {1}',
+      oldMainRestartBtn: '14일 초과 대화 아카이브 후 재시작',
+      mainHeavyOk: '아카이브할 서브에이전트 없음 (기본 대화 중심)',
+      noSubarchHint: '아카이브 가능한 종료 서브에이전트가 0건입니다. 14일 초과 기본 대화를 정리하려면 아래 저장소 상세를 여세요.',
+      lastMovedTpl: '최근 아카이브: {0}건 이동 ({1})',
+      lastRestoredTpl: '최근 복원: {0}건 복원',
+      lastErrTpl: '최근 작업 실패: {0}',
+      guardMuteTitle: '저장소 가드 알림 배너',
+      guardMuteDesc: '아카이브 대상이 있거나 백그라운드 RAM >= 4 GB일 때만 표시; 영구 끄기 가능',
+      guardMuteOn: '알림 켜기',
+      guardMuteOff: '영구 끄기',
     }),
     es: O.freeze({
       summary: 'Detalles de almacenamiento y archivo sin pérdida',
@@ -1779,6 +1832,16 @@
       restoreSelectedDescTpl: 'Cerrará Antigravity de forma segura, restaurará el lote seleccionado ({0}) sin pérdidas y reiniciará.',
       restoreScriptBtn: 'Script de restauración',
       restoreScriptReadyTpl: 'Script de restauración listo ({0}). Cierra Antigravity y ejecuta: {1}',
+      oldMainRestartBtn: 'Archivar >14 d y reiniciar',
+      mainHeavyOk: '0 subagentes archivables (principalmente chats)',
+      noSubarchHint: 'No hay subagentes finalizados (>2 h) listos para archivar. Para archivar chats principales >14 d (manteniendo los 20 recientes), abre los detalles abajo.',
+      lastMovedTpl: 'Último archivo: {0} movidos ({1})',
+      lastRestoredTpl: 'Última restauración: {0} recuperados',
+      lastErrTpl: 'Último error: {0}',
+      guardMuteTitle: 'Aviso emergente de almacenamiento',
+      guardMuteDesc: 'Solo avisa con subagentes archivables o RAM >= 4 GB; silenciar para desactivar',
+      guardMuteOn: 'Avisos activos',
+      guardMuteOff: 'Silenciar siempre',
     }),
     fr: O.freeze({
       summary: 'Détails de stockage et archivage sans perte',
@@ -1793,6 +1856,16 @@
       restoreSelectedDescTpl: 'Fermera Antigravity proprement, restaurera le lot sélectionné ({0}) sans perte puis redémarrera.',
       restoreScriptBtn: 'Script de restauration',
       restoreScriptReadyTpl: 'Script de restauration prêt ({0}). Fermez Antigravity puis exécutez : {1}',
+      oldMainRestartBtn: 'Archiver >14 j et redémarrer',
+      mainHeavyOk: '0 sous-agent archivable (surtout chats principaux)',
+      noSubarchHint: 'Aucun sous-agent terminé (>2 h) à archiver. Pour archiver les chats principaux >14 j (en gardant les 20 derniers), ouvrez les détails ci-dessous.',
+      lastMovedTpl: 'Dernier archivage : {0} déplacés ({1})',
+      lastRestoredTpl: 'Dernière restauration : {0} restaurés',
+      lastErrTpl: 'Dernière erreur : {0}',
+      guardMuteTitle: 'Bannière de rappel stockage',
+      guardMuteDesc: 'Avertit uniquement si des sous-agents sont archivables ou RAM >= 4 Go ; muet permanent possible',
+      guardMuteOn: 'Rappels actifs',
+      guardMuteOff: 'Couper toujours',
     }),
     de: O.freeze({
       summary: 'Speicherdetails & verlustfreie Archiv-Werkbank',
@@ -1807,6 +1880,16 @@
       restoreSelectedDescTpl: 'Beendet Antigravity sauber, stellt den ausgewählten Stapel ({0}) verlustfrei wieder her und startet neu.',
       restoreScriptBtn: 'Offline-Wiederherstellungsskript',
       restoreScriptReadyTpl: 'Wiederherstellungsskript bereit ({0}). Antigravity schließen & ausführen: {1}',
+      oldMainRestartBtn: '>14 T. archivieren & neu starten',
+      mainHeavyOk: '0 archivierbare Subagenten (meist Hauptchats)',
+      noSubarchHint: 'Aktuell sind 0 beendete Subagenten (>2 Std.) archivierbar. Um Hauptchats >14 T. (behält letzte 20) zu archivieren, öffne unten die Speicherdetails.',
+      lastMovedTpl: 'Letztes Archiv: {0} verschoben ({1})',
+      lastRestoredTpl: 'Letzte Wiederherstellung: {0} zurückgeholt',
+      lastErrTpl: 'Letzter Fehler: {0}',
+      guardMuteTitle: 'Speicher-Erinnerungsbanner',
+      guardMuteDesc: 'Meldet sich nur bei archivierbaren Subagenten oder RAM >= 4 GB; dauerhaft stummschaltbar',
+      guardMuteOn: 'Erinnerung ein',
+      guardMuteOff: 'Dauerhaft aus',
     }),
   });
 
@@ -2051,6 +2134,7 @@
         ['thoughtView', tmMode === 'off'],
         ['homeRipple', isMotionOff || effVal('homeLayout', l) === 'off'],
         ['convRipple', isMotionOff],
+        ['effortPanelLayout', effVal('effortSliderModule', l) === 'off'],
         ['linkTarget', effVal('omniModule', l) === 'off'],
         ['darkAura', effVal('ambientIntensity', l) === '0'],
         ['darkAuraStyle', effVal('ambientIntensity', l) === '0'],
@@ -2528,6 +2612,7 @@
             RS('thoughtView', [['immersive', U('optThoughtImmersive')], ['bilingual', U('optThoughtBilingual')]]),
             RS('telemetryModule', autoOnOff, 'Telemetry'),
             RS('effortSliderModule', autoOnOff, 'EffortSlider'),
+            RS('effortPanelLayout', [['codex', U('optEffortLayoutCodex', 'Codex Compact')], ['classic', U('optEffortLayoutClassic', 'Classic')]], 'EffortLayout'),
             RS('effortMemory', onOffStr, 'EffortMemory'),
             RS('periodicModelPicker', onOffStr, 'PeriodicPicker'),
             RS('omniModule', onOffStr, 'Omni'),
@@ -2550,7 +2635,7 @@
             { id: 'appearance', title: U('grpAppearance'), keys: ['palette', 'lightPreset', 'darkAuraStyle', 'accentTone', 'cornerStyle', 'ambientIntensity', 'darkAura', 'motionLevel', 'targetFps', 'homeLayout', 'homeRipple', 'convRipple', 'logoInk', 'language', 'hostLocalization'] },
             { id: 'interaction', title: U('grpInteraction'), keys: ['composerRestyle', 'placeholderStyle', 'smoothCaret', 'scrollBottomMotion', 'contextMenu', 'codeFont', 'codeLigatures', 'mascot', 'sidebarRestyle', 'sidebarCompact', 'sidebarNavFold'] },
             { id: 'thought', title: U('grpThought'), keys: ['thoughtTranslate', 'thoughtTrigger', 'thoughtView'] },
-            { id: 'modules', title: U('groupModules'), keys: ['telemetryModule', 'effortSliderModule', 'effortMemory', 'periodicModelPicker', 'omniModule', 'linkTarget'] },
+            { id: 'modules', title: U('groupModules'), keys: ['telemetryModule', 'effortSliderModule', 'effortPanelLayout', 'effortMemory', 'periodicModelPicker', 'omniModule', 'linkTarget'] },
             { id: 'beta', title: U('grpBeta'), keys: ['sidebarStudio'] },
           ];
 
@@ -2737,7 +2822,15 @@
             const sb = mkB('ag-cs-subtab-btn', slbl, 'data-ag-cs-subtab', sid);
             sa(sb, 'role', 'tab');
             sa(sb, 'aria-selected', activeSubTab === sid);
-            onClk(sb, () => runGuardedMut(() => applySubTab(sid)));
+            onClk(sb, () => {
+              const prevBtn = subTabBtns.find((b) => ga(b, 'aria-selected') === 'true') || null;
+              const prevRect = prevBtn && prevBtn !== sb && typeof prevBtn.getBoundingClientRect === 'function' ? prevBtn.getBoundingClientRect() : null;
+              const nextRect = prevBtn && prevBtn !== sb && typeof sb.getBoundingClientRect === 'function' ? sb.getBoundingClientRect() : null;
+              runGuardedMut(() => applySubTab(sid));
+              if (prevBtn && prevBtn !== sb && typeof runSettingsGroupGlide === 'function') {
+                runSettingsGroupGlide(subTabBar, prevBtn, sb, prevRect, nextRect);
+              }
+            });
             subTabBtns.push(sb);
             ap(subTabBar, sb);
           }
@@ -2951,17 +3044,22 @@
           sa(autoExitOffBtn, 'data-tone', 'secondary');
           const autoExitOnBtn = mkB('ag-cs-repo-sync-btn', U('storageAutoExitOn', 'On'), 'data-ag-cs-auto-archive-exit', 'on');
           sa(autoExitOnBtn, 'data-tone', 'secondary');
+          const guardMuteOffBtn = mkB('ag-cs-repo-sync-btn', wbInitUi.guardMuteOn, 'data-ag-cs-guard-mute', 'off');
+          sa(guardMuteOffBtn, 'data-tone', 'secondary');
+          const guardMuteOnBtn = mkB('ag-cs-repo-sync-btn', wbInitUi.guardMuteOff, 'data-ag-cs-guard-mute', 'on');
+          sa(guardMuteOnBtn, 'data-tone', 'secondary');
           const archActionChip = mkEl('span', 'ag-cs-repo-chip', '');
           setVis(archActionChip, false);
           sa(archActionChip, 'data-ag-cs-archive-action-status');
           const archConfirmBox = mkEl('div', 'ag-cs-thought-cfg-box');
           setVis(archConfirmBox, false);
           sa(archConfirmBox, 'data-ag-cs-archive-restart-box', '1');
+          const archConfirmDescEl = mkEl('p', 'ag-cs-thought-hint', U('storageArchiveRestartConfirmDesc'));
           const archConfirmCancel = mkB('ag-cs-thought-btn', U('uninstallCancelBtn', 'Cancel'), 'data-ag-cs-archive-restart-cancel');
           const archConfirmOk = mkB('ag-cs-thought-btn', U('storageArchiveRestartConfirmBtn', 'Confirm & Restart'), 'data-ag-cs-archive-restart-confirm');
           ap(
             archConfirmBox,
-            mkEl('p', 'ag-cs-thought-hint', U('storageArchiveRestartConfirmDesc')),
+            archConfirmDescEl,
             ap(mkEl('div', 'ag-cs-thought-actions'), ap(mkEl('div', 'ag-cs-thought-btn-group'), archConfirmCancel, archConfirmOk))
           );
 
@@ -3004,10 +3102,11 @@
           sa(oldMainConfirmBox, 'data-ag-cs-storage-old-box', '1');
           const oldMainConfirmCancel = mkB('ag-cs-thought-btn', U('uninstallCancelBtn', 'Cancel'), 'data-ag-cs-storage-old-cancel');
           const oldMainConfirmOk = mkB('ag-cs-thought-btn', wbInitUi.oldMainConfirmBtn, 'data-ag-cs-storage-old-confirm');
+          const oldMainRestartOk = mkB('ag-cs-thought-btn', wbInitUi.oldMainRestartBtn, 'data-ag-cs-storage-old-restart');
           ap(
             oldMainConfirmBox,
             mkEl('p', 'ag-cs-thought-hint', wbInitUi.oldMainConfirmDesc),
-            ap(mkEl('div', 'ag-cs-thought-actions'), ap(mkEl('div', 'ag-cs-thought-btn-group'), oldMainConfirmCancel, oldMainConfirmOk))
+            ap(mkEl('div', 'ag-cs-thought-actions'), ap(mkEl('div', 'ag-cs-thought-btn-group'), oldMainConfirmCancel, oldMainConfirmOk, oldMainRestartOk))
           );
           ap(
             stWb,
@@ -3100,7 +3199,18 @@
               else ra(autoExitOnBtn, 'data-active');
             });
           };
+          const syncGuardMuteButtons = (muted) => {
+            const isMuted = Boolean(muted);
+            runGuardedMut(() => {
+              if (!isMuted) sa(guardMuteOffBtn, 'data-active', '1');
+              else ra(guardMuteOffBtn, 'data-active');
+              if (isMuted) sa(guardMuteOnBtn, 'data-active', '1');
+              else ra(guardMuteOnBtn, 'data-active');
+            });
+          };
           syncAutoExitButtons(resolveSettingRowActiveValue('autoArchiveOnExit') === true);
+          syncGuardMuteButtons(false);
+          let hasUserActionChip = false;
 
           const applyStorageView = (st, prepared) => {
             if (!storageChip[K_IC] || !st || st.offline || st.timeout) return;
@@ -3119,6 +3229,25 @@
                 return;
               }
               if (typeof st.autoArchiveOnExit === 'boolean') syncAutoExitButtons(st.autoArchiveOnExit);
+              if (typeof st.guardMuted === 'boolean') syncGuardMuteButtons(st.guardMuted);
+              if (typeof st.archivableSubagentCount === 'number' && st.archivableSubagentCount === 0) {
+                archConfirmDescEl[K_TC] = wl.noSubarchHint || u.storageArchiveRestartConfirmDesc || '';
+              } else if (typeof st.archivableSubagentCount === 'number' && st.archivableSubagentCount > 0) {
+                archConfirmDescEl[K_TC] = u.storageArchiveRestartConfirmDesc || '';
+              }
+              if (!hasUserActionChip && st.lastArchiveResult && typeof st.lastArchiveResult === 'object') {
+                const lr = st.lastArchiveResult;
+                if (lr.ok === false && lr.error) {
+                  setVis(archActionChip, true);
+                  setChip(archActionChip, 'error', fmtTpl(wl.lastErrTpl || '{0}', [lr.error]));
+                } else if (lr.ok === true && Number(lr.movedCount) > 0) {
+                  setVis(archActionChip, true);
+                  setChip(archActionChip, 'ok', fmtTpl(wl.lastMovedTpl || '{0}/{1}', [lr.movedCount, fmtMbShort(lr.movedMb)]));
+                } else if (lr.ok === true && Number(lr.restoredCount) > 0) {
+                  setVis(archActionChip, true);
+                  setChip(archActionChip, 'ok', fmtTpl(wl.lastRestoredTpl || '{0}', [lr.restoredCount]));
+                }
+              }
               const clipPath = st.clipPath || st.archiveScriptPath || st.restoreScriptPath;
               if (prepared && (st.chipText || clipPath)) {
                 let chipMsg = st.chipText;
@@ -3135,15 +3264,23 @@
                 try { if (clipPath) navigator?.clipboard?.writeText?.(clipPath)?.catch?.(() => {}); } catch {}
               } else if (st.action !== 'storage-detail') {
                 const memSuffix = Number(st.lsMemoryMb) > 0 ? ` · ${fmtTpl(u.storageLsMemTpl || 'LS {0}', [fmtMbShort(st.lsMemoryMb)])}` : '';
+                const hasHighLsMem = isArr(st.warnReasons) ? st.warnReasons.includes('ls-memory') : Number(st.lsMemoryMb) >= 4096;
+                const archSubCnt = typeof st.archivableSubagentCount === 'number' ? st.archivableSubagentCount : null;
+                const effectiveWarn = Boolean(st.warn) && (hasHighLsMem || archSubCnt === null || archSubCnt > 0);
+                const statusWord = effectiveWarn
+                  ? u.storageWarn || '!'
+                  : st.warn && archSubCnt === 0
+                    ? wl.mainHeavyOk || u.storageOk || 'OK'
+                    : u.storageOk || 'OK';
                 setChip(
                   storageChip,
-                  st.warn ? 'warn' : 'ok',
+                  effectiveWarn ? 'warn' : 'ok',
                   fmtTpl(u.storageSummaryTpl || '{0}({1}/{2}/{3}){4}', [
                     fmtMbShort(st.totalMb),
                     st.mainCount || 0,
                     st.subagentCount || 0,
                     fmtMbShort(st.subagentMb),
-                    st.warn ? u.storageWarn || '!' : u.storageOk || 'OK',
+                    statusWord,
                   ]) + memSuffix
                 );
               }
@@ -3205,7 +3342,7 @@
           onClk(oldMainConfirmOk, () => {
             if (storageBusy) return;
             storageBusy = true;
-            runGuardedMut(() => { oldMainConfirmOk.disabled = true; });
+            runGuardedMut(() => { oldMainConfirmOk.disabled = true; oldMainRestartOk.disabled = true; });
             void invokePrismRepoAction('prepare-archive', version, {
               mode: 'subagents+old-main',
               oldMain: true,
@@ -3220,7 +3357,47 @@
               .catch((err) => applyStorageView({ ok: false, error: String(err?.message || err) }, false))
               .finally(() => {
                 storageBusy = false;
-                runGuardedMut(() => { if (oldMainConfirmOk[K_IC]) oldMainConfirmOk.disabled = false; });
+                runGuardedMut(() => {
+                  if (oldMainConfirmOk[K_IC]) oldMainConfirmOk.disabled = false;
+                  if (oldMainRestartOk[K_IC]) oldMainRestartOk.disabled = false;
+                });
+              });
+          });
+          onClk(oldMainRestartOk, () => {
+            if (storageBusy) return;
+            storageBusy = true;
+            hasUserActionChip = true;
+            const u = uiText(getLang()) || ui;
+            runGuardedMut(() => {
+              oldMainConfirmOk.disabled = true;
+              oldMainRestartOk.disabled = true;
+              setVis(archActionChip, true);
+              setChip(archActionChip, 'idle', u.storageArchiveRestartRunning || '...');
+            });
+            void invokePrismRepoAction('archive-and-restart', version, {
+              mode: 'subagents+old-main',
+              oldMain: true,
+              confirm: true,
+            })
+              .then((r) => {
+                if (!archActionChip[K_IC]) return;
+                const uNow = uiText(getLang()) || ui;
+                runGuardedMut(() => {
+                  setVis(archActionChip, true);
+                  if (r && r.ok) {
+                    setChip(archActionChip, 'updated', uNow.storageArchiveRestartScheduled || 'OK');
+                    setVis(oldMainConfirmBox, false);
+                  } else {
+                    setChip(archActionChip, 'error', r?.code === 'HOST_BUSY' ? (uNow.storageGuardBusyMsg || r.error) : (r?.error || 'Err'));
+                  }
+                });
+              })
+              .finally(() => {
+                storageBusy = false;
+                runGuardedMut(() => {
+                  if (oldMainConfirmOk[K_IC]) oldMainConfirmOk.disabled = false;
+                  if (oldMainRestartOk[K_IC]) oldMainRestartOk.disabled = false;
+                });
               });
           });
           on(restoreBatchSelect, 'change', () => {
@@ -3269,11 +3446,27 @@
           };
           onClk(autoExitOffBtn, () => toggleAutoExit(false));
           onClk(autoExitOnBtn, () => toggleAutoExit(true));
+          const toggleGuardMute = (muted) => {
+            syncGuardMuteButtons(muted);
+            hasUserActionChip = true;
+            void invokePrismRepoAction('storage-snooze', version, { muted: Boolean(muted) }).then((r) => {
+              if (r && r.ok !== false && !r.offline && archActionChip[K_IC]) {
+                const wlNow = getStorageWbUi(getLang());
+                runGuardedMut(() => {
+                  setVis(archActionChip, true);
+                  setChip(archActionChip, 'ok', muted ? wlNow.guardMuteOff : wlNow.guardMuteOn);
+                });
+              }
+            });
+          };
+          onClk(guardMuteOffBtn, () => toggleGuardMute(false));
+          onClk(guardMuteOnBtn, () => toggleGuardMute(true));
           onClk(archRestartBtn, () => { toggleConfirmBox(archConfirmBox); });
           onClk(archConfirmCancel, () => runGuardedMut(() => setVis(archConfirmBox, false)));
           onClk(archConfirmOk, () => {
             if (storageBusy) return;
             storageBusy = true;
+            hasUserActionChip = true;
             const u = uiText(getLang()) || ui;
             runGuardedMut(() => {
               archConfirmOk.disabled = true;
@@ -3324,6 +3517,7 @@
           onClk(restoreConfirmOk, () => {
             if (storageBusy || !selectedBatchName) return;
             storageBusy = true;
+            hasUserActionChip = true;
             runGuardedMut(() => { restoreConfirmOk.disabled = true; });
             void invokePrismRepoAction('restore-archive', version, { confirm: true, batchName: selectedBatchName })
               .then((r) => {
@@ -3388,6 +3582,7 @@
             archConfirmBox,
             restoreConfirmBox,
             ap(mkEl('div', 'ag-cs-about-repo-row'), ap(mkEl('div', 'ag-cs-about-repo-info'), mkEl('span', 'font-medium text-foreground', U('storageAutoExitTitle', 'Auto-Archive')), mkEl('span', 'ag-cs-thought-hint', U('storageAutoExitDesc'))), ap(mkEl('div', 'ag-cs-thought-btn-group'), autoExitOffBtn, autoExitOnBtn)),
+            ap(mkEl('div', 'ag-cs-about-repo-row'), ap(mkEl('div', 'ag-cs-about-repo-info'), mkEl('span', 'font-medium text-foreground', wbInitUi.guardMuteTitle), mkEl('span', 'ag-cs-thought-hint', wbInitUi.guardMuteDesc)), ap(mkEl('div', 'ag-cs-thought-btn-group'), guardMuteOffBtn, guardMuteOnBtn)),
             stWb,
             goMemBox
           );

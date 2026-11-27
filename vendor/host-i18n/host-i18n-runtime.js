@@ -117,13 +117,10 @@
   var CHAT_PROSE_ATTRS = ['data-markdown-root', 'data-message-content', 'data-message-id'];
   var CHAT_PROSE_TESTIDS = {
     'user-message': 1,
-    'assistant-message': 1,
-    'agent-input-box': 1,
     'user-message-bubble': 1,
     'user-message-content': 1,
     'user-input-step': 1,
     'planner-response-text': 1,
-    'agent-response': 1,
     'artifact-view': 1,
     'side-question-panel': 1,
     'side-question-conversation': 1,
@@ -135,8 +132,459 @@
     'user-message-document-chip': 1,
     'artifact-card': 1,
     'bubble-artifact-card': 1,
-    'thinking-collapsible-trigger': 1,
   };
+
+  var TUNNEL_ONLY_TESTIDS = {
+    'user-message': 1,
+    'user-input-step': 1,
+    'conversation-list-sidebar': 1,
+    'conversation-navigator': 1,
+  };
+
+  var SIDEBAR_CHROME_EXEMPT_TESTIDS = {
+    'section-header': 1,
+    'pinned-section-header': 1,
+    'sidebar-add-project-button': 1,
+  };
+
+  var SIDEBAR_STATUS_HEADER_MAP = {
+    'In Progress': '进行中',
+    Idle: '空闲',
+    Pinned: '已置顶',
+    Recent: '最近',
+    Archived: '已归档',
+    Running: '运行中',
+    Active: '活跃',
+    Completed: '已完成',
+  };
+
+  function translateSidebarStatusLabel(trimmed) {
+    if (!trimmed || trimmed.length > 32) return null;
+    return hasOwn.call(SIDEBAR_STATUS_HEADER_MAP, trimmed) ? SIDEBAR_STATUS_HEADER_MAP[trimmed] : null;
+  }
+
+  var MODEL_USAGE_LABEL_MAP = {
+    Model: '模型',
+    'View Usage': '查看用量明细',
+    'View usage': '查看用量明细',
+    Usage: '用量',
+    'Model Usage': '模型用量',
+    'Models & Usage': '模型与用量',
+    'Refreshing...': '刷新中...',
+    'Refreshing…': '刷新中…',
+    'Gemini Models': 'Gemini 模型',
+    'Claude and GPT models': 'Claude 与 GPT 模型',
+    'Weekly limit': '每周限额',
+    'Weekly Limit': '每周限额',
+    '5h limit': '5 小时限额',
+    '5h rate limit': '5 小时速率限制',
+    'Leaving Soon': '即将下线',
+    Notice: '提示',
+    New: '新',
+    '% left': '% 剩余',
+    'Resets soon': '即将重置',
+    'Resets soon.': '即将重置。',
+    'Resets in <1m': '不到 1 分钟后重置',
+    'Resets in <1m.': '不到 1 分钟后重置。',
+    'Resets in less than a minute': '不到 1 分钟后重置',
+    'Resets in less than a minute.': '不到 1 分钟后重置。',
+  };
+
+  var CONV_PROSE_BLOCK_TAGS = {
+    P: 1,
+    LI: 1,
+    BLOCKQUOTE: 1,
+    H1: 1,
+    H2: 1,
+    H3: 1,
+    H4: 1,
+    H5: 1,
+    H6: 1,
+    TD: 1,
+    TH: 1,
+    ARTICLE: 1,
+    FIGCAPTION: 1,
+  };
+
+  var CONV_TOOL_LABEL_MAP = {
+    Edited: '已编辑',
+    Editing: '正在编辑',
+    Analyzed: '已分析',
+    Analyzing: '正在分析',
+    Read: '已读取',
+    Reading: '正在读取',
+    Viewed: '已查看',
+    Viewing: '正在查看',
+    Created: '已创建',
+    Creating: '正在创建',
+    Deleted: '已删除',
+    Deleting: '正在删除',
+    Removed: '已移除',
+    Removing: '正在移除',
+    Modified: '已修改',
+    Modifying: '正在修改',
+    Updated: '已更新',
+    Updating: '正在更新',
+    Written: '已写入',
+    Writing: '正在写入',
+    Wrote: '已写入',
+    Searched: '已搜索',
+    Searching: '正在搜索',
+    Explored: '已浏览',
+    Exploring: '正在探索',
+    Found: '已找到',
+    Finding: '正在查找',
+    Listed: '已列出',
+    Listing: '正在列出',
+    Checked: '已检查',
+    Checking: '正在检查',
+    Ran: '已运行',
+    Running: '正在运行',
+    Executed: '已执行',
+    Executing: '正在执行',
+    Fetched: '已获取',
+    Fetching: '正在获取',
+    Opened: '已打开',
+    Opening: '正在打开',
+    Moved: '已移动',
+    Moving: '正在移动',
+    Renamed: '已重命名',
+    Renaming: '正在重命名',
+    Copied: '已复制',
+    Copying: '正在复制',
+    Used: '已使用',
+    Using: '正在使用',
+    Called: '已调用',
+    Calling: '正在调用',
+    Invoked: '已调用',
+    Invoking: '正在调用',
+    Browsed: '已浏览',
+    Browsing: '正在浏览',
+    Planned: '已规划',
+    Planning: '正在规划',
+    Verified: '已验证',
+    Verifying: '正在验证',
+    Tested: '已测试',
+    Testing: '正在测试',
+    Installed: '已安装',
+    Installing: '正在安装',
+    Built: '已构建',
+    Building: '正在构建',
+    Cancelled: '已取消',
+    Canceled: '已取消',
+    Completed: '已完成',
+    Finished: '已完成',
+    Failed: '失败',
+    Thinking: '正在思考',
+    'Thinking...': '正在思考...',
+    'Thinking…': '正在思考…',
+    'Thought for': '已思考',
+    Working: '正在运行',
+    'Working...': '正在运行...',
+    'Working…': '正在运行…',
+    'just now': '刚刚',
+    'Just now': '刚刚',
+    '<1m ago': '不到 1 分钟前',
+    'a moment ago': '刚刚',
+    'A moment ago': '刚刚',
+    'a few seconds ago': '几秒前',
+    'A few seconds ago': '几秒前',
+    'a minute ago': '1 分钟前',
+    'A minute ago': '1 分钟前',
+    'an hour ago': '1 小时前',
+    'An hour ago': '1 小时前',
+    'a day ago': '1 天前',
+    'A day ago': '1 天前',
+    yesterday: '昨天',
+    Yesterday: '昨天',
+  };
+
+  var CONV_TOOL_CLAUSE_VERBS = {
+    explored: '已浏览',
+    viewed: '已查看',
+    analyzed: '已分析',
+    read: '已读取',
+    edited: '已编辑',
+    modified: '已修改',
+    updated: '已更新',
+    created: '已创建',
+    deleted: '已删除',
+    removed: '已移除',
+    searched: '已搜索',
+    checked: '已检查',
+    listed: '已列出',
+    ran: '已运行',
+    executed: '已执行',
+    fetched: '已获取',
+    browsed: '已浏览',
+    found: '已找到',
+    opened: '已打开',
+    used: '已使用',
+    called: '已调用',
+    invoked: '已调用',
+    wrote: '已写入',
+    written: '已写入',
+    planned: '已规划',
+    verified: '已验证',
+    tested: '已测试',
+  };
+
+  var CONV_TOOL_CLAUSE_NOUNS = {
+    file: '文件',
+    files: '文件',
+    command: '命令',
+    commands: '命令',
+    step: '步骤',
+    steps: '步骤',
+    task: '任务',
+    tasks: '任务',
+    search: '搜索',
+    searches: '搜索',
+    query: '查询',
+    queries: '查询',
+    match: '匹配项',
+    matches: '匹配项',
+    result: '结果',
+    results: '结果',
+    line: '行',
+    lines: '行',
+    page: '页面',
+    pages: '页面',
+    'web page': '网页',
+    'web pages': '网页',
+    url: '链接',
+    urls: '链接',
+    tool: '工具',
+    tools: '工具',
+    item: '项',
+    items: '项',
+    folder: '文件夹',
+    folders: '文件夹',
+    directory: '目录',
+    directories: '目录',
+    edit: '编辑',
+    edits: '编辑',
+    change: '变更',
+    changes: '变更',
+    diff: '差异',
+    diffs: '差异',
+    symbol: '符号',
+    symbols: '符号',
+    reference: '引用',
+    references: '引用',
+  };
+
+  var CONV_TOOL_CLAUSE_RE =
+    /^([A-Za-z]+)\s+(?:(\d+)\s+)?(web\s+pages?|files?|commands?|steps?|tasks?|searches?|queries|query|matches?|results?|lines?|pages?|urls?|tools?|items?|folders?|directories|directory|edits?|changes?|diffs?|symbols?|references?)$/i;
+
+  var CONV_TOOL_STATUS_RE =
+    /^(?:(?:Thought|Thinking|Worked|Working)\s+for\s+\d+(?:\.\d+)?\s*[dhms](?:\s+\d+(?:\.\d+)?\s*[hms])*|Stopped\s+after\s+\d+(?:\s+\w+)*|\d+[sSmMhHdD]\s+ago|\d+\s+(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\s+ago|\d+\/\d+\s+steps?|\d+\s+files?\s+changed)$/;
+
+  var CONV_ELAPSED_RE =
+    /^(?:(\d+)\s*d(?:\s+(\d+)\s*h)?(?:\s+(\d+)\s*m)?|(\d+)\s*h(?:\s+(\d+)\s*m)?(?:\s+(\d+(?:\.\d+)?)\s*s)?|(\d+)\s*m(?:\s+(\d+(?:\.\d+)?)\s*s)?|(\d+(?:\.\d+)?)\s*s)$/;
+
+  function translateCompactElapsed(trimmed) {
+    var m = CONV_ELAPSED_RE.exec(trimmed);
+    if (!m) return null;
+    if (m[1]) {
+      var dOut = m[1] + ' 天';
+      if (m[2]) dOut += ' ' + m[2] + ' 小时';
+      if (m[3]) dOut += ' ' + m[3] + ' 分钟';
+      return dOut;
+    }
+    if (m[4]) {
+      if (m[5] && m[6]) return m[4] + ' 小时 ' + m[5] + ' 分 ' + m[6] + ' 秒';
+      if (m[5]) return m[4] + ' 小时 ' + m[5] + ' 分钟';
+      if (m[6]) return m[4] + ' 小时 ' + m[6] + ' 秒';
+      return m[4] + ' 小时';
+    }
+    if (m[7]) {
+      return m[8] ? m[7] + ' 分 ' + m[8] + ' 秒' : m[7] + ' 分钟';
+    }
+    if (m[9]) return m[9] + ' 秒';
+    return null;
+  }
+
+  var EN_MONTH_MAP = {
+    jan: 1, january: 1,
+    feb: 2, february: 2,
+    mar: 3, march: 3,
+    apr: 4, april: 4,
+    may: 5,
+    jun: 6, june: 6,
+    jul: 7, july: 7,
+    aug: 8, august: 8,
+    sep: 9, sept: 9, september: 9,
+    oct: 10, october: 10,
+    nov: 11, november: 11,
+    dec: 12, december: 12,
+  };
+
+  function translateEnglishDate(raw) {
+    var m = /^([A-Za-z]+)\.?\s+(\d{1,2})(?:,\s*(\d{4}))?$/.exec(String(raw || '').trim());
+    if (!m) return null;
+    var mon = EN_MONTH_MAP[m[1].toLowerCase()];
+    if (!mon) return null;
+    return (m[3] ? m[3] + ' 年 ' : '') + mon + ' 月 ' + parseInt(m[2], 10) + ' 日';
+  }
+
+  var MODEL_BADGE_TOOLTIP_MAP = {
+    'For most deep reasoning and complex problems': '适用于大多数深度推理与复杂问题',
+    'For your hardest, long-horizon tasks': '适用于最具挑战性的长周期复杂任务',
+    'For speed and efficiency in execution tasks': '适用于追求速度与效率的执行类任务',
+    'Offloads routine steps to a faster executor. Same quality, fewer tokens used.': '将常规步骤分流给更快的执行器处理。保持同等质量，同时消耗更少 Token。',
+  };
+
+  function translateModelBadgeTooltip(trimmed) {
+    if (!trimmed || trimmed.length > 220) return null;
+    if (hasOwn.call(MODEL_BADGE_TOOLTIP_MAP, trimmed)) {
+      return MODEL_BADGE_TOOLTIP_MAP[trimmed];
+    }
+    var orig = /^The original (.+?) model for advanced workflows\.(?:\s+Leaving on ([A-Za-z]+\.?\s+\d{1,2}(?:,\s*\d{4})?)\.?)?$/i.exec(trimmed);
+    if (orig) {
+      var d1 = orig[2] ? translateEnglishDate(orig[2]) : null;
+      return '面向进阶工作流的初代 ' + orig[1] + ' 模型。' + (d1 ? '将于 ' + d1 + '下线。' : '');
+    }
+    var offl = /^(.+?)\s+that may offload routine steps to\s+(.+?)\.\s+Same\s+(.+?)-level quality,\s+fewer tokens used\.?$/i.exec(trimmed);
+    if (offl) {
+      return '由 ' + offl[1] + ' 规划，可将常规步骤分流给 ' + offl[2] + ' 执行。保持 ' + offl[3] + ' 级质量，同时消耗更少 Token。';
+    }
+    var repl = /^Use\s+(.+?)\s+for better quality with lower quota usage\.(?:\s+Leaving on ([A-Za-z]+\.?\s+\d{1,2}(?:,\s*\d{4})?)\.?)?$/i.exec(trimmed);
+    if (repl) {
+      var d2 = repl[2] ? translateEnglishDate(repl[2]) : null;
+      return '建议改用 ' + repl[1] + '，以更低额度消耗获得更高质量。' + (d2 ? '将于 ' + d2 + '下线。' : '');
+    }
+    var rem = /^(.+?)\s+will be removed from Antigravity on\s+([A-Za-z]+\.?\s+\d{1,2}(?:,\s*\d{4})?)\.?$/i.exec(trimmed);
+    if (rem) {
+      var d3 = translateEnglishDate(rem[2]);
+      if (d3) return rem[1] + ' 将于 ' + d3 + '从 Antigravity 移除。';
+    }
+    var lv = /^Leaving on\s+([A-Za-z]+\.?\s+\d{1,2}(?:,\s*\d{4})?)\.?$/i.exec(trimmed);
+    if (lv) {
+      var d4 = translateEnglishDate(lv[1]);
+      if (d4) return '将于 ' + d4 + '下线。';
+    }
+    return null;
+  }
+
+  function translateModelUsageLabel(trimmed) {
+    if (!trimmed || trimmed.length > 220) return null;
+    if (hasOwn.call(MODEL_USAGE_LABEL_MAP, trimmed)) {
+      return MODEL_USAGE_LABEL_MAP[trimmed];
+    }
+    var tipHit = translateModelBadgeTooltip(trimmed);
+    if (tipHit) return tipHit;
+    var pct = /^(\d+(?:\.\d+)?)%\s+left$/.exec(trimmed);
+    if (pct) return '剩余 ' + pct[1] + '%';
+    var lim = /^(\d+)\s*([dhms])\s+(rate\s+)?limit$/i.exec(trimmed);
+    if (lim) {
+      var uMap = { d: '天', h: '小时', m: '分钟', s: '秒' };
+      var unit = uMap[lim[2].toLowerCase()];
+      if (unit) return lim[1] + ' ' + unit + (lim[3] ? '速率限制' : '限额');
+    }
+    var rst = /^Resets\s+in\s+(.+?)(\.)?$/i.exec(trimmed);
+    if (rst) {
+      var dur = translateCompactElapsed(rst[1].trim());
+      if (dur) return dur + '后重置' + (rst[2] ? '。' : '');
+    }
+    var comb = /^(Weekly\s+limit|\d+\s*[dhms]\s+limit),\s*resets\s+in\s+(.+?)(\.)?$/i.exec(trimmed);
+    if (comb) {
+      var head = translateModelUsageLabel(comb[1].trim());
+      var dur2 = translateCompactElapsed(comb[2].trim());
+      if (head && dur2) return head + '，' + dur2 + '后重置' + (comb[3] ? '。' : '');
+    }
+    return null;
+  }
+
+  function translateDynamicUiFallback(normalized) {
+    if (!normalized || normalized.length > 220) return null;
+    var stepChip = /^(\d+)\/(\d+)\s+steps?$/i.exec(normalized);
+    if (stepChip) return stepChip[1] + '/' + stepChip[2] + ' 步骤';
+    var stepAria = /^(\d+)\/(\d+)\s+steps?\.\s+(Show|Hide)\s+plan$/i.exec(normalized);
+    if (stepAria) {
+      return stepAria[1] + '/' + stepAria[2] + ' 步骤 · ' + (stepAria[3].toLowerCase() === 'show' ? '展开计划' : '收起计划');
+    }
+    var turnNav = /^Turn\s+(\d+)\s+of\s+(\d+)$/i.exec(normalized);
+    if (turnNav) return '第 ' + turnNav[1] + ' / ' + turnNav[2] + ' 轮';
+    if (normalized === 'Leaving Soon') return '即将下线';
+    if (normalized === 'Notice') return '提示';
+    var usageHit = translateModelUsageLabel(normalized);
+    if (usageHit && normalized !== 'New') return usageHit;
+    return null;
+  }
+
+  function translateConvDurationFallback(trimmed) {
+    var stepChip = /^(\d+)\/(\d+)\s+steps?$/i.exec(trimmed);
+    if (stepChip) return stepChip[1] + '/' + stepChip[2] + ' 步骤';
+    var fc = /^(\d+)\s+files?\s+changed$/i.exec(trimmed);
+    if (fc) return fc[1] + ' 个文件已修改';
+    var dm = /^(Thought|Thinking|Worked|Working)\s+for\s+(.+)$/.exec(trimmed);
+    if (!dm) return null;
+    var dur = translateCompactElapsed(dm[2].trim());
+    if (!dur) return null;
+    var p = dm[1];
+    var verb = p === 'Thought' ? '已思考' : p === 'Thinking' ? '正在思考' : p === 'Worked' ? '已运行' : '正在运行';
+    return verb + ' ' + dur;
+  }
+
+  function translateConvToolSummaryClauses(trimmed) {
+    if (!trimmed || trimmed.length > 96) return null;
+    var c0 = trimmed.charCodeAt(0);
+    if (c0 < 65 || c0 > 90) return null;
+    var parts = trimmed.split(/\s*(?:,\s*(?:and\s+)?|\s+and\s+)\s*/i);
+    if (!parts.length || parts.length > 5) return null;
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i].trim();
+      var m = CONV_TOOL_CLAUSE_RE.exec(part);
+      if (!m) return null;
+      var verbKey = m[1].toLowerCase();
+      var nounKey = m[3].toLowerCase().replace(/\s+/g, ' ');
+      if (!hasOwn.call(CONV_TOOL_CLAUSE_VERBS, verbKey) || !hasOwn.call(CONV_TOOL_CLAUSE_NOUNS, nounKey)) {
+        return null;
+      }
+      var zhVerb = CONV_TOOL_CLAUSE_VERBS[verbKey];
+      var zhNoun = CONV_TOOL_CLAUSE_NOUNS[nounKey];
+      if (m[2]) {
+        out.push(zhVerb + ' ' + m[2] + (zhNoun === '行' ? ' 行' : ' 个' + zhNoun));
+      } else {
+        out.push(zhVerb + zhNoun);
+      }
+    }
+    return out.join('，');
+  }
+
+  function isToolElapsedHost(el) {
+    return Boolean(el && el.nodeType === 1 && getAttr(el, 'data-testid') === 'tool-group-elapsed');
+  }
+
+  function isChangedFilesReviewHost(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (getAttr(el, 'data-testid') === 'changed-files-card-review') return true;
+    var p = el.parentElement;
+    return Boolean(p && p.nodeType === 1 && getAttr(p, 'data-testid') === 'changed-files-card-review');
+  }
+
+  function isThinkingBodySelf(el) {
+    if (!el || el.nodeType !== 1) return false;
+    var tag = el.tagName ? String(el.tagName).toUpperCase() : '';
+    if (tag !== 'DIV') return false;
+    var prev = el.previousElementSibling;
+    if (!prev || prev.nodeType !== 1) return false;
+    var pTag = prev.tagName ? String(prev.tagName).toUpperCase() : '';
+    if (pTag !== 'BUTTON') return false;
+    return getAttr(prev, 'data-testid') === 'thinking-collapsible-trigger';
+  }
+
+  function isStrictConvToolLabel(trimmed, parentEl) {
+    if (!trimmed || trimmed.length > 96) return false;
+    if (hasOwn.call(CONV_TOOL_LABEL_MAP, trimmed)) return true;
+    if (CONV_TOOL_STATUS_RE.test(trimmed)) return true;
+    if (translateConvToolSummaryClauses(trimmed) !== null) return true;
+    if (parentEl && isToolElapsedHost(parentEl) && CONV_ELAPSED_RE.test(trimmed)) return true;
+    if (trimmed === 'Review' && parentEl && isChangedFilesReviewHost(parentEl)) return true;
+    return false;
+  }
 
   var USER_CONTENT_BOUNDARY = {
     testids: {
@@ -245,7 +693,7 @@
     return cnt;
   }
 
-  function isPrismOwnedSelf(el, preTokens) {
+  function isPrismOwnedSelf(el, preTokens, ignoreEnhancedModelPanelClass) {
     if (!el || el.nodeType !== 1) return false;
     var id = el.id || getAttr(el, 'id') || '';
     if (id && hasOwn.call(PRISM_OWNED_IDS, id)) return true;
@@ -255,6 +703,7 @@
     var tokens = preTokens || getClassTokens(el);
     for (var t = 0; t < tokens.length; t++) {
       var cls = tokens[t];
+      if (ignoreEnhancedModelPanelClass && cls === 'ces-ag-panel-enhanced') continue;
       for (var p = 0; p < PRISM_CLASS_PREFIXES.length; p++) {
         if (cls.indexOf(PRISM_CLASS_PREFIXES[p]) === 0) return true;
       }
@@ -380,18 +829,54 @@
     return false;
   }
 
-  function isDirectIgnoredSelf(el) {
+  function isModelChromeContainerSelf(el, tid) {
+    if (
+      hasAttr(el, 'data-effort') ||
+      hasAttr(el, 'data-ag-cs-orch-l3') ||
+      tid === 'orchestrator-picker-effort' ||
+      tid === 'model-selector-effort-option' ||
+      tid === 'model-selector-effort-group' ||
+      tid === 'orchestrator-effort-bar' ||
+      tid === 'model-selector-trigger'
+    ) {
+      return false;
+    }
+    return (
+      tid === 'model-selector-panel' ||
+      tid === 'model-selector-list' ||
+      tid === 'model-selector-item' ||
+      tid === 'model-selector-orchestrator' ||
+      tid === 'orchestrator-picker-row' ||
+      hasAttr(el, 'data-ag-cs-orch-l2') ||
+      hasAttr(el, 'data-ag-cs-model-submenu') ||
+      hasAttr(el, 'data-ces-orch-row')
+    );
+  }
+
+  function isDirectIgnoredSelf(el, preTid, allowSpecialContainers) {
     if (!el || el.nodeType !== 1) return false;
     var tag = el.tagName ? String(el.tagName).toUpperCase() : '';
     if (IGNORED_TAGS[tag]) return true;
     if (el.isContentEditable === true || getAttr(el, 'contenteditable') === 'true') return true;
     var tokens = getClassTokens(el);
-    var tid = getAttr(el, 'data-testid');
-    if (isPrismOwnedSelf(el, tokens)) return true;
+    var tid = preTid !== undefined ? preTid : getAttr(el, 'data-testid');
+    if (isPrismOwnedSelf(el, tokens, Boolean(allowSpecialContainers && tid === 'model-selector-panel'))) return true;
     if (isExternalPluginOwnedSelf(el)) return true;
-    if (isModelSelectorSelf(el, tid)) return true;
-    if (isChatProseSelf(el, tokens, tid)) return true;
-    if (isUserContentBoundarySelf(el, tokens, tid)) return true;
+    if (isModelSelectorSelf(el, tid)) {
+      if (!(allowSpecialContainers && isModelChromeContainerSelf(el, tid))) {
+        return true;
+      }
+    }
+    if (isChatProseSelf(el, tokens, tid)) {
+      if (!(allowSpecialContainers && tid && hasOwn.call(TUNNEL_ONLY_TESTIDS, tid))) {
+        return true;
+      }
+    }
+    if (isUserContentBoundarySelf(el, tokens, tid)) {
+      if (!(allowSpecialContainers && tid && (hasOwn.call(TUNNEL_ONLY_TESTIDS, tid) || tid === 'project-header'))) {
+        return true;
+      }
+    }
     for (var i = 0; i < tokens.length; i++) {
       if (IGNORED_CLASS_MAP[tokens[i]]) return true;
     }
@@ -404,8 +889,12 @@
    * States:
    *   -1: hard-ignored (DirectIgnored ancestor or >128 depth Fail-Closed)
    *    0: normal host UI (safe to translate)
-   *    1: inside conversation stream without interactive chrome exemption (skip self/text, descend elements)
+   *    1: inside conversation stream without interactive chrome exemption (strict tool-label only, descend elements)
    *    2: inside interactive chrome control within conversation stream (safe to translate)
+   *    3: thinking-collapsible-trigger / agent-response (strict thought/tool/step/changed-files labels only)
+   *    4: tunnel-only wrapper (user-message / user-input-step / conversation-list-sidebar / conversation-navigator):
+   *       never translates directly; descends only to locate whitelisted chrome subtrees
+   *    5: model-selector-panel (strict View Usage / quota / model-badge allowlist only)
    */
   function measureSafeBoundaryDepth(el) {
     if (!el) return { blocked: false, canDescendConv: false, state: 0, remDepth: MAX_SAFE_BOUNDARY_DEPTH };
@@ -418,11 +907,53 @@
     var sawInteractiveChrome = false;
     var sawConvStream = false;
     var blockedByConvStream = false;
+    var sawToolLabelOnly = false;
+    var sawProseBlock = false;
+    var sawUserActions = false;
+    var sawSidebarChrome = false;
+    var sawProjectHeader = false;
+    var sawNavTurn = false;
+    var sawTunnel = false;
+    var sawModelUsagePanel = false;
     var depth = 0;
     while (cur && depth < MAX_SAFE_BOUNDARY_DEPTH) {
       if (cur.nodeType === 1) {
-        if (isDirectIgnoredSelf(cur)) {
+        var curTid = getAttr(cur, 'data-testid');
+        if (isDirectIgnoredSelf(cur, curTid, true) || isThinkingBodySelf(cur)) {
           return { blocked: true, canDescendConv: false, state: -1, remDepth: -1 };
+        }
+        var curTag = cur.tagName ? String(cur.tagName).toUpperCase() : '';
+        if (CONV_PROSE_BLOCK_TAGS[curTag]) {
+          sawProseBlock = true;
+        }
+        if (isModelChromeContainerSelf(cur, curTid)) {
+          sawModelUsagePanel = true;
+        } else if (curTid === 'user-message-actions') {
+          sawUserActions = true;
+        } else if (curTid && hasOwn.call(SIDEBAR_CHROME_EXEMPT_TESTIDS, curTid)) {
+          sawSidebarChrome = true;
+        } else if (curTid === 'project-header') {
+          sawProjectHeader = true;
+        } else if (curTid === 'conversation-navigator-turn') {
+          sawNavTurn = true;
+        } else if (curTid && hasOwn.call(TUNNEL_ONLY_TESTIDS, curTid)) {
+          if (curTid === 'user-message' || curTid === 'user-input-step') {
+            if (!sawUserActions) sawTunnel = true;
+          } else if (curTid === 'conversation-list-sidebar') {
+            if (!sawSidebarChrome) sawTunnel = true;
+          } else if (curTid === 'conversation-navigator') {
+            if (!sawNavTurn) sawTunnel = true;
+          }
+        }
+        if (
+          curTid === 'thinking-collapsible-trigger' ||
+          curTid === 'agent-response' ||
+          curTid === 'assistant-message'
+        ) {
+          if (sawProseBlock) {
+            return { blocked: true, canDescendConv: false, state: -1, remDepth: -1 };
+          }
+          sawToolLabelOnly = true;
         }
         if (isInteractiveChatChromeSelf(cur, true)) {
           sawInteractiveChrome = true;
@@ -441,6 +972,21 @@
       return { blocked: true, canDescendConv: false, state: -1, remDepth: -1 };
     }
     var remDepth = MAX_SAFE_BOUNDARY_DEPTH - depth;
+    if (sawModelUsagePanel) {
+      return { blocked: true, canDescendConv: true, state: 5, remDepth: remDepth };
+    }
+    if (sawTunnel) {
+      if (sawProjectHeader) {
+        return { blocked: true, canDescendConv: true, state: 6, remDepth: remDepth };
+      }
+      return { blocked: true, canDescendConv: true, state: 4, remDepth: remDepth };
+    }
+    if (sawSidebarChrome || sawNavTurn) {
+      return { blocked: false, canDescendConv: false, state: 0, remDepth: remDepth };
+    }
+    if (sawToolLabelOnly) {
+      return { blocked: true, canDescendConv: true, state: 3, remDepth: remDepth };
+    }
     if (blockedByConvStream) {
       return { blocked: true, canDescendConv: true, state: 1, remDepth: remDepth };
     }
@@ -455,7 +1001,54 @@
   function advanceBoundaryForChild(parentCtx, childEl) {
     var nextRem = parentCtx.remDepth - 1;
     if (nextRem < 0 || parentCtx.state === -1) return null;
-    if (isDirectIgnoredSelf(childEl)) return null;
+    var childTid = getAttr(childEl, 'data-testid');
+    if (isDirectIgnoredSelf(childEl, childTid, true) || isThinkingBodySelf(childEl)) return null;
+    if (
+      parentCtx.state === 5 ||
+      isModelChromeContainerSelf(childEl, childTid)
+    ) {
+      return {
+        blocked: true,
+        canDescendConv: true,
+        state: 5,
+        remDepth: nextRem,
+      };
+    }
+    if (parentCtx.state === 6) {
+      return { blocked: true, canDescendConv: true, state: 6, remDepth: nextRem };
+    }
+    if (parentCtx.state === 4) {
+      if (childTid === 'user-message-actions') {
+        return { blocked: true, canDescendConv: true, state: 1, remDepth: nextRem };
+      }
+      if (childTid === 'project-header') {
+        return { blocked: true, canDescendConv: true, state: 6, remDepth: nextRem };
+      }
+      if (childTid && (hasOwn.call(SIDEBAR_CHROME_EXEMPT_TESTIDS, childTid) || childTid === 'conversation-navigator-turn')) {
+        return { blocked: false, canDescendConv: false, state: 0, remDepth: nextRem };
+      }
+      return { blocked: true, canDescendConv: true, state: 4, remDepth: nextRem };
+    }
+    if (childTid && hasOwn.call(TUNNEL_ONLY_TESTIDS, childTid)) {
+      return { blocked: true, canDescendConv: true, state: 4, remDepth: nextRem };
+    }
+    if (
+      parentCtx.state === 3 ||
+      childTid === 'thinking-collapsible-trigger' ||
+      childTid === 'agent-response' ||
+      childTid === 'assistant-message'
+    ) {
+      if (parentCtx.state === 3) {
+        var childTag = childEl.tagName ? String(childEl.tagName).toUpperCase() : '';
+        if (CONV_PROSE_BLOCK_TAGS[childTag]) return null;
+      }
+      return {
+        blocked: true,
+        canDescendConv: true,
+        state: 3,
+        remDepth: nextRem,
+      };
+    }
     var pState = parentCtx.state;
     var isInter = isInteractiveChatChromeSelf(childEl, true);
     var isConv = isConversationStreamSelf(childEl);
@@ -1576,6 +2169,11 @@
       var patRes = applyPatterns(normalized);
       if (patRes !== null) {
         return cacheAndReturn(normalized, patRes);
+      }
+
+      var dynRes = translateDynamicUiFallback(normalized);
+      if (dynRes !== null && dynRes !== normalized) {
+        return cacheAndReturn(normalized, dynRes);
       }
 
       var lastCh = normalized.charAt(normalized.length - 1);
@@ -2891,6 +3489,113 @@
       }
     }
 
+    function translateConvToolTextNode(node) {
+      if (!state.active || state.destroyed || state.mode === 'off') return;
+      if (!node || node.nodeType !== 3) return;
+      if (node.isConnected === false) return;
+      if (exemptNodes.has(node)) return;
+
+      var parent = node.parentElement || node.parentNode;
+      if (parent && exemptElements.has(parent)) return;
+      if (parent && parent.nodeType === 1) {
+        var pTag = parent.tagName ? String(parent.tagName).toUpperCase() : '';
+        if (CONV_PROSE_BLOCK_TAGS[pTag]) return;
+      }
+      if (!inOffRetryPass && (checkNodeConflict(node) || !state.active)) return;
+
+      var original = node.nodeValue;
+      if (!original) return;
+
+      var snap = textSnapshots.get(node);
+      if (snap && snap.expected === original) {
+        modifiedTextNodes.add(node);
+        return;
+      }
+      if (!snap && textUntranslatedCache.get(node) === original) return;
+
+      var trimmed = original.trim();
+      if (!trimmed || !isStrictConvToolLabel(trimmed, parent)) {
+        textUntranslatedCache.set(node, original);
+        return;
+      }
+
+      var translated = null;
+      if (hasOwn.call(CONV_TOOL_LABEL_MAP, trimmed)) {
+        translated = CONV_TOOL_LABEL_MAP[trimmed];
+      } else if (trimmed === 'Review' && parent && isChangedFilesReviewHost(parent)) {
+        translated = '审查';
+      } else if (parent && isToolElapsedHost(parent) && CONV_ELAPSED_RE.test(trimmed)) {
+        translated = translateCompactElapsed(trimmed);
+      } else if (CONV_TOOL_STATUS_RE.test(trimmed)) {
+        translated = translateSingleUnit(trimmed);
+        if (translated === null || translated === trimmed) {
+          translated = translateConvDurationFallback(trimmed);
+        }
+      } else {
+        translated = translateConvToolSummaryClauses(trimmed);
+      }
+      if (translated !== null && translated !== trimmed) {
+        var edges = sliceEdgeWhitespace(original);
+        applyTextWrite(node, original, edges.leading + translated + edges.trailing);
+      } else {
+        textUntranslatedCache.set(node, original);
+      }
+    }
+
+    function translateModelUsageTextNode(node) {
+      if (!state.active || state.destroyed || state.mode === 'off') return;
+      if (!node || node.nodeType !== 3) return;
+      if (node.isConnected === false) return;
+      if (exemptNodes.has(node)) return;
+
+      var parent = node.parentElement || node.parentNode;
+      if (parent && exemptElements.has(parent)) return;
+      if (!inOffRetryPass && (checkNodeConflict(node) || !state.active)) return;
+
+      var original = node.nodeValue;
+      if (!original) return;
+
+      var snap = textSnapshots.get(node);
+      if (snap && snap.expected === original) {
+        modifiedTextNodes.add(node);
+        return;
+      }
+      if (!snap && textUntranslatedCache.get(node) === original) return;
+
+      var trimmed = original.trim();
+      var translated = trimmed ? translateModelUsageLabel(trimmed) : null;
+      if (translated !== null && translated !== trimmed) {
+        var edges = sliceEdgeWhitespace(original);
+        applyTextWrite(node, original, edges.leading + translated + edges.trailing);
+      } else {
+        textUntranslatedCache.set(node, original);
+      }
+    }
+
+    function translateSidebarStatusTextNode(node) {
+      if (!state.active || state.destroyed || state.mode === 'off') return;
+      if (!node || node.nodeType !== 3 || node.isConnected === false || exemptNodes.has(node)) return;
+      var parent = node.parentElement || node.parentNode;
+      if (parent && exemptElements.has(parent)) return;
+      if (!inOffRetryPass && (checkNodeConflict(node) || !state.active)) return;
+      var original = node.nodeValue;
+      if (!original) return;
+      var snap = textSnapshots.get(node);
+      if (snap && snap.expected === original) {
+        modifiedTextNodes.add(node);
+        return;
+      }
+      if (!snap && textUntranslatedCache.get(node) === original) return;
+      var trimmed = original.trim();
+      var translated = trimmed ? translateSidebarStatusLabel(trimmed) : null;
+      if (translated !== null && translated !== trimmed) {
+        var edges = sliceEdgeWhitespace(original);
+        applyTextWrite(node, original, edges.leading + translated + edges.trailing);
+      } else {
+        textUntranslatedCache.set(node, original);
+      }
+    }
+
     function translateTextNode(node, knownSafeParent) {
       if (!state.active || state.destroyed) return;
       if (!node || node.nodeType !== 3) return;
@@ -2899,7 +3604,21 @@
 
       var parent = node.parentElement || node.parentNode;
       if (parent && exemptElements.has(parent)) return;
-      if (!knownSafeParent && parent && isIgnoredBoundary(parent)) return;
+      if (!knownSafeParent && parent) {
+        var pBound = measureSafeBoundaryDepth(parent);
+        if (pBound.blocked) {
+          if (state.mode !== 'off') {
+            if (pBound.state === 1 || pBound.state === 3) {
+              translateConvToolTextNode(node);
+            } else if (pBound.state === 5) {
+              translateModelUsageTextNode(node);
+            } else if (pBound.state === 6) {
+              translateSidebarStatusTextNode(node);
+            }
+          }
+          return;
+        }
+      }
 
       if (!inOffRetryPass && (checkNodeConflict(node) || !state.active)) return;
 
@@ -3098,13 +3817,29 @@
         visitedSet.add(el);
       }
 
-      if (ctx.state === 1) {
-        // Inside conversation stream without interactive chrome exemption:
-        // skip self text/attrs, descend only into element children to locate interactive buttons/toolbars.
+      if (ctx.state === 1 || ctx.state === 3 || ctx.state === 4 || ctx.state === 5 || ctx.state === 6) {
+        // state=1/3: strict conversation tool/status labels only
+        // state=4: tunnel-only wrapper (never translates directly; descends to find whitelisted chrome)
+        // state=5: model-selector-panel (strict View Usage / quota / model-badge allowlist only)
+        // state=6: sidebar project-header (strict host status headings only, never user project names)
+        if (ctx.state === 3 && state.mode !== 'off') {
+          var elTid3 = getAttr(el, 'data-testid');
+          if (elTid3 === 'step-plan-chip' || elTid3 === 'changed-files-card-review') {
+            translateAttributes(el);
+          }
+        }
         var sub = el.firstChild;
         while (sub) {
           if (!state.active || state.destroyed) return;
-          if (sub.nodeType === 1) {
+          if (sub.nodeType === 3 && state.mode !== 'off') {
+            if (ctx.state === 1 || ctx.state === 3) {
+              translateConvToolTextNode(sub);
+            } else if (ctx.state === 5) {
+              translateModelUsageTextNode(sub);
+            } else if (ctx.state === 6) {
+              translateSidebarStatusTextNode(sub);
+            }
+          } else if (sub.nodeType === 1) {
             if (budget && budget.isExhausted()) {
               deferRemainingChildren(el, sub);
               return;
@@ -3406,7 +4141,7 @@
 
     function hasFloatingShellHint(el) {
       if (!el || el.nodeType !== 1) return false;
-      if (isDialogOrPortalWrappingDialog(el) || isDirectIgnoredSelf(el)) return false;
+      if (isDialogOrPortalWrappingDialog(el) || isDirectIgnoredSelf(el, undefined, true)) return false;
       if (isFloatingElement(el, doc)) return true;
       if (hasAttr(el, 'data-radix-portal') || hasAttr(el, 'data-floating-ui-focus-guard')) return true;
       var idStr = typeof el.id === 'string' ? el.id.toLowerCase() : '';
@@ -3429,7 +4164,7 @@
             }
           }
         }
-        if (getAttr(cur, 'data-state') === 'open' || getAttr(cur, 'aria-expanded') === 'true') {
+        if (getAttr(cur, 'data-state') === 'open' || getAttr(cur, 'aria-expanded') === 'true' || hasAttr(cur, 'data-tooltip-id')) {
           hit = true;
         }
         cur = cur.parentElement;
@@ -3449,7 +4184,7 @@
       function addCandidate(el) {
         if (!el || el.nodeType !== 1 || el.isConnected === false) return;
         if (candidateSet.has(el) || exemptElements.has(el)) return;
-        if (isDialogOrPortalWrappingDialog(el) || isDirectIgnoredSelf(el)) return;
+        if (isDialogOrPortalWrappingDialog(el) || isDirectIgnoredSelf(el, undefined, true)) return;
         if (hasAttr(el, 'data-hover-card-popup') || (typeof el.querySelector === 'function' && (hasAttr(el, 'data-base-ui-portal') || hasAttr(el, 'data-floating-ui-portal')) && el.querySelector('[data-hover-card-popup]'))) return;
         candidateSet.add(el);
         candidates.push(el);
@@ -3680,19 +4415,58 @@
                   var addedNode = added[j];
                   if (!addedNode || addedNode.isConnected === false) continue;
                   if (addedNode.nodeType === 3) {
-                    if (targetBound.blocked || exemptNodes.has(addedNode)) continue;
+                    if (exemptNodes.has(addedNode)) continue;
+                    if (targetBound.blocked) {
+                      if (state.mode === 'off') continue;
+                      if (targetBound.state === 5) {
+                        if (translateModelUsageLabel((addedNode.nodeValue || '').trim()) === null) continue;
+                      } else if (targetBound.state === 6) {
+                        if (translateSidebarStatusLabel((addedNode.nodeValue || '').trim()) === null) continue;
+                      } else if (
+                        (targetBound.state !== 1 && targetBound.state !== 3) ||
+                        !isStrictConvToolLabel((addedNode.nodeValue || '').trim(), targetEl)
+                      ) {
+                        continue;
+                      }
+                    }
                   } else if (addedNode.nodeType === 1) {
-                    if (exemptElements.has(addedNode) || isDirectIgnoredSelf(addedNode) || isFocusGuard(addedNode)) continue;
+                    if (
+                      exemptElements.has(addedNode) ||
+                      isDirectIgnoredSelf(addedNode, undefined, true) ||
+                      isThinkingBodySelf(addedNode) ||
+                      isFocusGuard(addedNode)
+                    ) {
+                      continue;
+                    }
+                    if (targetBound.state === 3) {
+                      var addedTag = addedNode.tagName ? String(addedNode.tagName).toUpperCase() : '';
+                      if (CONV_PROSE_BLOCK_TAGS[addedTag]) continue;
+                    }
                     if (isHoverCardPortalOrSelf(addedNode)) {
                       if (!pausedNow) scheduleHoverCardNode(addedNode);
                       continue;
                     }
                     if (
                       targetBound.canDescendConv &&
-                      !isInteractiveChatChromeSelf(addedNode, true) &&
+                      (targetBound.state === 3 || targetBound.state === 4 || targetBound.state === 5 || targetBound.state === 6 || !isInteractiveChatChromeSelf(addedNode, true)) &&
                       !hasElementChild(addedNode)
                     ) {
-                      continue;
+                      if (state.mode === 'off') continue;
+                      if (targetBound.state === 4) {
+                        var leafTid4 = getAttr(addedNode, 'data-testid');
+                        if (!leafTid4 || (!hasOwn.call(SIDEBAR_CHROME_EXEMPT_TESTIDS, leafTid4) && leafTid4 !== 'conversation-navigator-turn' && leafTid4 !== 'user-message-actions' && leafTid4 !== 'project-header')) {
+                          continue;
+                        }
+                      } else if (targetBound.state === 5) {
+                        if (translateModelUsageLabel((addedNode.textContent || '').trim()) === null) continue;
+                      } else if (targetBound.state === 6) {
+                        if (translateSidebarStatusLabel((addedNode.textContent || '').trim()) === null) continue;
+                      } else if (
+                        (targetBound.state !== 1 && targetBound.state !== 3) ||
+                        !isStrictConvToolLabel((addedNode.textContent || '').trim(), addedNode)
+                      ) {
+                        continue;
+                      }
                     }
                   } else {
                     continue;
@@ -3722,7 +4496,19 @@
               var snap = textSnapshots.get(target);
               if (snap && snap.expected === target.nodeValue) continue;
               var parentBound = getCachedBoundary(parent);
-              if (parentBound.blocked) continue;
+              if (parentBound.blocked) {
+                if (state.mode === 'off') continue;
+                if (parentBound.state === 5) {
+                  if (translateModelUsageLabel((target.nodeValue || '').trim()) === null) continue;
+                } else if (parentBound.state === 6) {
+                  if (translateSidebarStatusLabel((target.nodeValue || '').trim()) === null) continue;
+                } else if (
+                  (parentBound.state !== 1 && parentBound.state !== 3) ||
+                  !isStrictConvToolLabel((target.nodeValue || '').trim(), parent)
+                ) {
+                  continue;
+                }
+              }
               if (inLayer2b && inspectExternalDelayedMutation(target)) return;
               if (pausedNow) continue;
               if (checkNodeConflict(target)) continue;
@@ -3839,7 +4625,7 @@
           if (exemptElements.has(target) || isDialogOrPortalWrappingDialog(target)) return;
           if (target.closest?.('[data-testid="conversation-row-sidebar"],[data-testid="project-header"],[data-testid="conversation-list-sidebar"],[data-testid="sidebar-split"]>div:first-child,[data-hover-card-popup]')) return;
           var hoverBound = measureSafeBoundaryDepth(target);
-          if (hoverBound.blocked) return;
+          if (hoverBound.blocked && !(hoverBound.state === 5 && typeof target.closest === 'function' && target.closest('[data-tooltip-id]'))) return;
           if (isInsideDialog(target) && !isSmallHoverControl(target)) return;
         }
 

@@ -1316,9 +1316,20 @@
             var popOpen = triggerBtn.getAttribute('data-popup-open');
             if (popOpen !== null && popOpen !== 'false') return true;
           }
+          if (docRef && typeof docRef.querySelector === 'function') {
+            var directPanel = docRef.querySelector('[data-testid="model-selector-panel"]');
+            if (directPanel) {
+              var dpClosed =
+                typeof directPanel.getAttribute === 'function' &&
+                (directPanel.getAttribute('data-state') === 'closed' ||
+                  directPanel.getAttribute('aria-hidden') === 'true' ||
+                  (directPanel.hasAttribute && directPanel.hasAttribute('hidden')));
+              if (!dpClosed) return true;
+            }
+          }
           if (docRef && typeof docRef.querySelectorAll === 'function') {
             var menus = docRef.querySelectorAll(
-              '[data-testid="model-selector-panel"], [role="menu"], [data-radix-popper-content-wrapper], [data-radix-menu-content]'
+              '[role="menu"], [data-radix-popper-content-wrapper], [data-radix-menu-content]'
             );
             for (var i = 0; i < menus.length; i += 1) {
               var m = menus[i];
@@ -1329,10 +1340,10 @@
                 if (m.getAttribute('aria-hidden') === 'true') continue;
                 if (m.hasAttribute && m.hasAttribute('hidden')) continue;
               }
-              if (typeof m.getBoundingClientRect === 'function') {
+              var hasText = Boolean(m.textContent && String(m.textContent).trim());
+              if (!hasText && typeof m.getBoundingClientRect === 'function') {
                 var mr = m.getBoundingClientRect();
-                var hasText = Boolean(m.textContent && String(m.textContent).trim());
-                if (mr && mr.width === 0 && mr.height === 0 && !hasText) continue;
+                if (mr && mr.width === 0 && mr.height === 0) continue;
               }
               return true;
             }
@@ -6497,7 +6508,16 @@
         }
 
         if (!suppressUntilMs) {
-          if (ev && ev.type === 'click' && !overlayEl) syncMiniKeycapBadges();
+          if (
+            ev &&
+            ev.type === 'click' &&
+            !overlayEl &&
+            ev.target &&
+            typeof ev.target.closest === 'function' &&
+            ev.target.closest('[data-testid="model-selector-panel"], [data-testid="model-selector-trigger"], [role="menu"], [role="listbox"]')
+          ) {
+            scheduleBadgeSync(40);
+          }
           return;
         }
         if (Date.now() > suppressUntilMs) {

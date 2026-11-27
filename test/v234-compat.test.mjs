@@ -905,7 +905,7 @@ test('v2.34.0 Effort Slider: switching from Gemini 4 Neon (XHigh) to Gemini 4 Ca
     assert.equal(outerSpan.textContent, 'Gemini 4 Neon Extra');
     assert.equal(outerSpan.firstChild, reactModelText, 'Model base TextNode reference must be preserved');
     assert.equal(effortSpan.firstChild, reactEffortText, 'Effort Span HostText reference must NEVER be replaced via textContent');
-    assert.equal(effortSpan.style.color, '#8b5cf6', 'Neon Extra should display max-tier purple');
+    assert.equal(effortSpan.style.color, '#5b21b6', 'Neon Extra should display Gemini deep-purple Extra High tier');
 
     // 2) Host switches to 3-tier Gemini 4 Carbon (Medium) via React HostText characterData update ONLY (even if effort text wasn't updated yet!)
     currentSelected = carbonMed;

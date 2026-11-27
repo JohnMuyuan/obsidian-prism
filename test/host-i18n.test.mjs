@@ -2768,3 +2768,317 @@ test('Issue #80: host-i18n exempts orchestrator-picker-row/effort and data-ag-cs
 
   inst.destroy();
 });
+
+test('Conversation tool step labels, agent-response headers, compound summaries & timestamps translate strictly while protecting pills, prose, and arbitrary words', () => {
+  const env = createTestEnv();
+  const dict = JSON.parse(fs.readFileSync(path.join(ROOT, 'vendor', 'host-i18n', 'zh-CN.json'), 'utf8'));
+
+  const convView = env.makeEl('div', { attrs: { 'data-testid': 'conversation-view' } });
+  const agentResp = env.makeEl('div', { attrs: { 'data-testid': 'agent-response' } });
+
+  const workedTrig = env.makeEl('button', { attrs: { 'data-testid': 'worked-for-collapsible' } });
+  const workedLbl = env.makeEl('span', { text: 'Worked for 28s' });
+  workedTrig.append(workedLbl);
+
+  const toolGroupTrig = env.makeEl('button', { attrs: { 'data-testid': 'tool-group-collapsible' } });
+  const toolGroupLbl = env.makeEl('span', { text: 'Explored file, ran command' });
+  const toolGroupElapsed = env.makeEl('span', { attrs: { 'data-testid': 'tool-group-elapsed' }, text: '4m 40s' });
+  toolGroupTrig.append(toolGroupLbl, toolGroupElapsed);
+
+  const editRow = env.makeEl('div');
+  const editVerb = env.makeEl('span', { text: 'Edited ' });
+  const editPill = env.makeEl('span', { attrs: { 'data-testid': 'entity-pill' }, text: 'cdp.js' });
+  editRow.append(editVerb, editPill);
+
+  const analyzeRow = env.makeEl('div');
+  const analyzeVerb = env.makeEl('span', { text: 'Analyzed' });
+  const analyzeFileBtn = env.makeEl('button');
+  const analyzeFileName = env.makeEl('span', { text: 'Settings' });
+  analyzeFileBtn.append(analyzeFileName);
+  const analyzePill = env.makeEl('span', { attrs: { 'data-testid': 'entity-pill' }, text: 'Edited' });
+  analyzeRow.append(analyzeVerb, analyzeFileBtn, analyzePill);
+
+  const ranRow = env.makeEl('div');
+  const ranVerb = env.makeEl('span', { text: 'Ran' });
+  const ranDesc = env.makeEl('span', { text: '检查 stream-choreography.js 中的涟漪触发器' });
+  ranRow.append(ranVerb, ranDesc);
+
+  const thinkTrig = env.makeEl('button', { attrs: { 'data-testid': 'thinking-collapsible-trigger' } });
+  const thinkLbl = env.makeEl('span', { text: 'Thought for 17s' });
+  thinkTrig.append(thinkLbl);
+  const thinkBody = env.makeEl('div');
+  const thinkBodySpan = env.makeEl('span', { text: 'Edited' });
+  thinkBody.append(thinkBodySpan);
+
+  const liveThinkTrig = env.makeEl('button', { attrs: { 'data-testid': 'thinking-collapsible-trigger' } });
+  const liveThinkSpan = env.makeEl('span', { text: 'Thinking...' });
+  liveThinkTrig.append(liveThinkSpan);
+
+  const mdProse = env.makeEl('div', { attrs: { 'data-markdown-root': '' } });
+  const mdProseSpan = env.makeEl('span', { text: 'Edited' });
+  mdProse.append(mdProseSpan);
+  const directProseP = env.makeEl('p', { text: 'Edited' });
+
+  agentResp.append(workedTrig, toolGroupTrig, editRow, analyzeRow, ranRow, thinkTrig, thinkBody, liveThinkTrig, mdProse, directProseP);
+
+  const footerFs = env.makeEl('fieldset');
+  const toolbar = env.makeEl('div', { attrs: { 'data-testid': 'cascade-system-message-toolbar' } });
+  const copyBtn = env.makeEl('button', { attrs: { 'aria-label': 'Copy' } });
+  const tsJustNow = env.makeEl('span', { text: 'just now' });
+  const tsAgo = env.makeEl('span', { text: '8m ago' });
+  toolbar.append(copyBtn, tsJustNow, tsAgo);
+  footerFs.append(toolbar);
+
+  convView.append(agentResp, footerFs);
+  env.doc.body.append(convView);
+
+  const inst = runtime.mountHostI18n({
+    root: env.win,
+    doc: env.doc,
+    dict,
+    mode: 'on',
+    nowFn: env.nowFn,
+    setTimeoutFn: env.setTimeoutFn,
+    clearTimeoutFn: env.clearTimeoutFn,
+    rafFn: env.rafFn,
+    cancelRafFn: env.cancelRafFn,
+  });
+
+  assert.equal(workedLbl.textContent, '已运行 28 秒');
+  assert.equal(toolGroupLbl.textContent, '已浏览文件，已运行命令');
+  assert.equal(toolGroupElapsed.textContent, '4 分 40 秒');
+  assert.equal(editVerb.textContent, '已编辑 ');
+  assert.equal(editPill.textContent, 'cdp.js', 'File name pill must remain untouched');
+  assert.equal(analyzeVerb.textContent, '已分析');
+  assert.equal(analyzeFileName.textContent, 'Settings', 'File button inside agent-response must NOT translate arbitrary UI words');
+  assert.equal(analyzePill.textContent, 'Edited', 'Text inside entity-pill must never translate even if it matches a tool verb');
+  assert.equal(ranVerb.textContent, '已运行');
+  assert.equal(ranDesc.textContent, '检查 stream-choreography.js 中的涟漪触发器');
+  assert.equal(thinkLbl.textContent, '已思考 17 秒');
+  assert.equal(thinkBodySpan.textContent, 'Edited', 'Thinking panel body sibling must remain untouched');
+  assert.equal(liveThinkSpan.textContent, '正在思考...');
+  assert.equal(mdProseSpan.textContent, 'Edited', 'Text inside data-markdown-root prose must never translate');
+  assert.equal(directProseP.textContent, 'Edited', 'Text inside <p> prose inside agent-response must never translate');
+  assert.equal(copyBtn.getAttribute('aria-label'), '复制');
+  assert.equal(tsJustNow.textContent, '刚刚');
+  assert.equal(tsAgo.textContent, '8 分钟前');
+
+  // Dynamic transitions: Thinking... -> Thought for 12s, multi-clause summary, timestamp tick, new tool row
+  liveThinkSpan.firstChild.nodeValue = 'Thought for 12s';
+  toolGroupLbl.firstChild.nodeValue = 'Explored 2 files, ran 3 commands';
+  tsJustNow.firstChild.nodeValue = '1m ago';
+  const dynRow = env.makeEl('div');
+  const dynVerb = env.makeEl('span', { text: 'Created ' });
+  const dynPill = env.makeEl('span', { attrs: { 'data-testid': 'entity-pill' }, text: 'app.ts' });
+  dynRow.append(dynVerb, dynPill);
+  agentResp.append(dynRow);
+  env.flushObservers();
+  env.advanceTime(50);
+  assert.equal(liveThinkSpan.textContent, '已思考 12 秒');
+  assert.equal(toolGroupLbl.textContent, '已浏览 2 个文件，已运行 3 个命令');
+  assert.equal(tsJustNow.textContent, '1 分钟前');
+  assert.equal(dynVerb.textContent, '已创建 ');
+  assert.equal(dynPill.textContent, 'app.ts');
+
+  // destroy() restores all translated tool labels & timestamps losslessly
+  inst.destroy();
+  assert.equal(workedLbl.textContent, 'Worked for 28s');
+  assert.equal(toolGroupLbl.textContent, 'Explored 2 files, ran 3 commands');
+  assert.equal(toolGroupElapsed.textContent, '4m 40s');
+  assert.equal(editVerb.textContent, 'Edited ');
+  assert.equal(analyzeVerb.textContent, 'Analyzed');
+  assert.equal(ranVerb.textContent, 'Ran');
+  assert.equal(thinkLbl.textContent, 'Thought for 17s');
+  assert.equal(liveThinkSpan.textContent, 'Thought for 12s');
+  assert.equal(dynVerb.textContent, 'Created ');
+  assert.equal(tsJustNow.textContent, '1m ago');
+  assert.equal(tsAgo.textContent, '8m ago');
+});
+
+test('Model selector Usage popup, model badges, step-plan chip, changed-files card, composer permissions, user-message-actions & sidebar section headers localize strictly', () => {
+  const env = createTestEnv();
+  const dict = JSON.parse(fs.readFileSync(path.join(ROOT, 'vendor', 'host-i18n', 'zh-CN.json'), 'utf8'));
+
+  // 1. Model selector panel (with real ces-ag-panel-enhanced class) + nested Usage popup inside panel
+  const modelPanel = env.makeEl('div', {
+    className: 'flex flex-col min-h-0 ces-ag-panel-enhanced',
+    attrs: { 'data-testid': 'model-selector-panel', 'data-ces-layout': 'codex', 'data-ces-view': 'models' },
+  });
+  const cesHead = env.makeEl('div', { className: 'ces-cx-list-head', text: 'Usage' });
+  const mHdr = env.makeEl('div', { attrs: { 'data-testid': 'model-selector-header' }, text: 'Model' });
+  const item1 = env.makeEl('div', { attrs: { 'data-testid': 'model-selector-item' } });
+  const mName1 = env.makeEl('span', { text: 'Gemini 3.8 Flash' });
+  const mEff1 = env.makeEl('span', { attrs: { 'data-effort': 'medium' }, text: 'Medium' });
+  const badgeLeaving = env.makeEl('span', { text: 'Leaving Soon' });
+  item1.append(mName1, mEff1, badgeLeaving);
+
+  const item2 = env.makeEl('div', { attrs: { 'data-testid': 'model-selector-item' } });
+  const badgeNew = env.makeEl('span', { text: 'New' });
+  const badgeNotice = env.makeEl('span', { text: 'Notice' });
+  const autoLbl = env.makeEl('span', { text: 'Auto' });
+  item2.append(badgeNew, badgeNotice, autoLbl);
+
+  const viewUsageRow = env.makeEl('div', { attrs: { role: 'menuitem' } });
+  const viewUsageSpan = env.makeEl('span', { text: 'View Usage' });
+  viewUsageRow.append(viewUsageSpan);
+
+  // Nested Usage popup mounted INSIDE model-selector-panel (real Antigravity Base UI layout)
+  const usagePopup = env.makeEl('div', { attrs: { role: 'menu', 'data-nested': '' } });
+  const uTitle = env.makeEl('div', { text: 'Usage' });
+  const uGemini = env.makeEl('div', { text: 'Gemini Models' });
+  const uWeekly = env.makeEl('div', { text: 'Weekly limit' });
+  const uReset1 = env.makeEl('div', { text: 'Resets in 6d 13h' });
+  const uLeft1 = env.makeEl('div', { text: '94% left' });
+  const uLeftSplit = env.makeEl('div');
+  uLeftSplit.append(env.makeText('99'), env.makeText('% left'));
+  const u5h = env.makeEl('div', { text: '5h limit' });
+  const uReset2 = env.makeEl('div', { text: 'Resets in 4h 58m' });
+  const uClaude = env.makeEl('div', { text: 'Claude and GPT models' });
+  usagePopup.append(uTitle, uGemini, uWeekly, uReset1, uLeft1, uLeftSplit, u5h, uReset2, uClaude);
+  modelPanel.append(cesHead, mHdr, item1, item2, viewUsageRow, usagePopup);
+
+  // 2. Conversation chrome: step-plan-chip, changed-files-card, user-message-actions, agent-input-box
+  const convView = env.makeEl('div', { attrs: { 'data-testid': 'conversation-view' } });
+  const agentResp = env.makeEl('div', { attrs: { 'data-testid': 'agent-response' } });
+  const stepChip = env.makeEl('button', { attrs: { 'data-testid': 'step-plan-chip', 'aria-label': '4/4 steps. Show plan' } });
+  const stepSpan = env.makeEl('span', { text: '4/4 steps' });
+  stepChip.append(stepSpan);
+  const changedHdr = env.makeEl('div', { attrs: { 'data-testid': 'changed-files-card-header' } });
+  const changedCount = env.makeEl('span', { text: '5 files changed' });
+  const reviewBtn = env.makeEl('button', { attrs: { 'data-testid': 'changed-files-card-review' } });
+  const reviewSpan = env.makeEl('span', { text: 'Review' });
+  reviewBtn.append(reviewSpan);
+  changedHdr.append(changedCount, reviewBtn);
+  agentResp.append(stepChip, changedHdr);
+
+  const userMsg = env.makeEl('div', { attrs: { 'data-testid': 'user-message' } });
+  const userStep = env.makeEl('div', { attrs: { 'data-testid': 'user-input-step' } });
+  const userPromptDiv = env.makeEl('div', { text: 'Settings' });
+  const userActions = env.makeEl('div', { attrs: { 'data-testid': 'user-message-actions' } });
+  const userTs = env.makeEl('span', { text: '29m ago' });
+  const revertBtn = env.makeEl('button', { attrs: { 'data-testid': 'revert-button', 'aria-label': 'Undo to this point' } });
+  userActions.append(userTs, revertBtn);
+  userStep.append(userPromptDiv, userActions);
+  userMsg.append(userStep);
+
+  const inputBox = env.makeEl('div', { attrs: { 'data-testid': 'agent-input-box' } });
+  const ceEditor = env.makeEl('div', { attrs: { contenteditable: 'true' }, text: 'Settings' });
+  const permBtn = env.makeEl('button', { attrs: { 'data-testid': 'permissions-selector-trigger' } });
+  const permSpan = env.makeEl('span', { text: 'Turbo' });
+  permBtn.append(permSpan);
+  inputBox.append(ceEditor, permBtn);
+  convView.append(userMsg, agentResp, inputBox);
+
+  // 3. Sidebar list section header vs user conversation rows
+  const convList = env.makeEl('div', { attrs: { 'data-testid': 'conversation-list-sidebar' } });
+  const secHdr = env.makeEl('div', { attrs: { 'data-testid': 'section-header' } });
+  const secSpan = env.makeEl('span', { text: 'Conversations' });
+  secHdr.append(secSpan);
+  const addProjBtn = env.makeEl('button', { attrs: { 'data-testid': 'sidebar-add-project-button', 'aria-label': 'Create New Project' } });
+  const projStatusInProg = env.makeEl('button', { attrs: { 'data-testid': 'project-header' } });
+  const projStatusInProgSpan = env.makeEl('span', { text: 'In Progress' });
+  projStatusInProg.append(projStatusInProgSpan);
+  const projStatusIdle = env.makeEl('button', { attrs: { 'data-testid': 'project-header' } });
+  const projStatusIdleSpan = env.makeEl('span', { text: 'Idle' });
+  projStatusIdle.append(projStatusIdleSpan);
+  const projUserName = env.makeEl('button', { attrs: { 'data-testid': 'project-header' } });
+  const projUserNameSpan = env.makeEl('span', { text: 'Settings' });
+  projUserName.append(projUserNameSpan);
+  const userRow = env.makeEl('button', { attrs: { 'data-testid': 'conversation-row-sidebar' }, text: 'Settings' });
+  convList.append(secHdr, addProjBtn, projStatusInProg, projStatusIdle, projUserName, userRow);
+
+  const orchRow = env.makeEl('div', { attrs: { role: 'menuitem', 'data-testid': 'model-selector-orchestrator' } });
+  const orchTitle = env.makeEl('span', { text: 'Orchestrator' });
+  const orchSub = env.makeEl('span', { text: 'Gemini 4 Neon High' });
+  const orchNew = env.makeEl('span', { text: 'New' });
+  orchRow.append(orchTitle, orchSub, orchNew);
+  const orchL2 = env.makeEl('div', { attrs: { role: 'menu', 'data-nested': '', 'data-ag-cs-orch-l2': '1' } });
+  const orchL2Row = env.makeEl('div', { attrs: { role: 'menuitem', 'data-testid': 'orchestrator-picker-row', 'data-ces-orch-row': '1' } });
+  const orchL2Name = env.makeEl('span', { text: 'Gemini 4 Carbon' });
+  const orchL2Eff = env.makeEl('span', { text: 'Medium' });
+  const orchL2New = env.makeEl('span', { text: 'New' });
+  orchL2Row.append(orchL2Name, orchL2Eff, orchL2New);
+  orchL2.append(orchL2Row);
+  modelPanel.append(orchRow, orchL2);
+
+  // Floating Base-UI model badge tooltips rendered directly on body
+  const tipWrap = env.makeEl('div');
+  const tipSamples = [
+    ['For most deep reasoning and complex problems', '适用于大多数深度推理与复杂问题'],
+    ['For your hardest, long-horizon tasks', '适用于最具挑战性的长周期复杂任务'],
+    ['For speed and efficiency in execution tasks', '适用于追求速度与效率的执行类任务'],
+    ['Offloads routine steps to a faster executor. Same quality, fewer tokens used.', '将常规步骤分流给更快的执行器处理。保持同等质量，同时消耗更少 Token。'],
+    ['The original Gemini 4 model for advanced workflows. Leaving on Nov 30.', '面向进阶工作流的初代 Gemini 4 模型。将于 11 月 30 日下线。'],
+    ['Neon that may offload routine steps to Hydrogen. Same Neon-level quality, fewer tokens used.', '由 Neon 规划，可将常规步骤分流给 Hydrogen 执行。保持 Neon 级质量，同时消耗更少 Token。'],
+    ['Use Hydrogen for better quality with lower quota usage. Leaving on Nov 30.', '建议改用 Hydrogen，以更低额度消耗获得更高质量。将于 11 月 30 日下线。'],
+    ['GPT-OSS will be removed from Antigravity on November 30, 2026.', 'GPT-OSS 将于 2026 年 11 月 30 日从 Antigravity 移除。'],
+  ].map(([raw, expected]) => {
+    const tip = env.makeEl('div', { attrs: { role: 'tooltip' }, className: 'compact-tooltip' });
+    const inner = env.makeEl('div', { text: raw });
+    tip.append(inner);
+    tipWrap.append(tip);
+    return { raw, expected, inner };
+  });
+
+  env.doc.body.append(modelPanel, convView, convList, tipWrap);
+
+  const inst = runtime.mountHostI18n({ root: env.win, doc: env.doc, dict, mode: 'on' });
+
+  assert.equal(cesHead.textContent, 'Usage', 'Prism-injected .ces-cx-list-head inside panel must remain untouched');
+  assert.equal(mHdr.textContent, '模型');
+  assert.equal(mName1.textContent, 'Gemini 3.8 Flash');
+  assert.equal(mEff1.textContent, 'Medium');
+  assert.equal(autoLbl.textContent, 'Auto');
+  assert.equal(badgeLeaving.textContent, '即将下线');
+  assert.equal(badgeNew.textContent, '新');
+  assert.equal(badgeNotice.textContent, '提示');
+  assert.equal(orchTitle.textContent, 'Orchestrator');
+  assert.equal(orchSub.textContent, 'Gemini 4 Neon High');
+  assert.equal(orchNew.textContent, '新');
+  assert.equal(orchL2Name.textContent, 'Gemini 4 Carbon');
+  assert.equal(orchL2Eff.textContent, 'Medium');
+  assert.equal(orchL2New.textContent, '新');
+  for (const t of tipSamples) {
+    assert.equal(t.inner.textContent, t.expected);
+  }
+  assert.equal(viewUsageSpan.textContent, '查看用量明细');
+  assert.equal(uTitle.textContent, '用量');
+  assert.equal(uGemini.textContent, 'Gemini 模型');
+  assert.equal(uWeekly.textContent, '每周限额');
+  assert.equal(uReset1.textContent, '6 天 13 小时后重置');
+  assert.equal(uLeft1.textContent, '剩余 94%');
+  assert.equal(uLeftSplit.textContent, '99% 剩余');
+  assert.equal(u5h.textContent, '5 小时限额');
+  assert.equal(uReset2.textContent, '4 小时 58 分钟后重置');
+  assert.equal(uClaude.textContent, 'Claude 与 GPT 模型');
+  assert.equal(stepSpan.textContent, '4/4 步骤');
+  assert.equal(stepChip.getAttribute('aria-label'), '4/4 步骤 · 展开计划');
+  assert.equal(changedCount.textContent, '5 个文件已修改');
+  assert.equal(reviewSpan.textContent, '审查');
+  assert.equal(userPromptDiv.textContent, 'Settings', 'User prompt inside user-message must stay untouched');
+  assert.equal(userTs.textContent, '29 分钟前');
+  assert.equal(revertBtn.getAttribute('aria-label'), '撤销到此节点');
+  assert.equal(ceEditor.textContent, 'Settings', 'contenteditable editor must stay untouched');
+  assert.equal(permSpan.textContent, '极速');
+  assert.equal(secSpan.textContent, '会话列表');
+  assert.equal(addProjBtn.getAttribute('aria-label'), '新建项目');
+  assert.equal(projStatusInProgSpan.textContent, '进行中');
+  assert.equal(projStatusIdleSpan.textContent, '空闲');
+  assert.equal(projUserNameSpan.textContent, 'Settings', 'User project name in project-header must stay untouched');
+  assert.equal(userRow.textContent, 'Settings', 'Sidebar conversation title must stay untouched');
+
+  inst.destroy();
+  assert.equal(badgeLeaving.textContent, 'Leaving Soon');
+  assert.equal(badgeNew.textContent, 'New');
+  assert.equal(orchNew.textContent, 'New');
+  assert.equal(orchL2New.textContent, 'New');
+  for (const t of tipSamples) {
+    assert.equal(t.inner.textContent, t.raw);
+  }
+  assert.equal(uReset1.textContent, 'Resets in 6d 13h');
+  assert.equal(stepSpan.textContent, '4/4 steps');
+  assert.equal(permSpan.textContent, 'Turbo');
+  assert.equal(secSpan.textContent, 'Conversations');
+  assert.equal(projStatusInProgSpan.textContent, 'In Progress');
+  assert.equal(projStatusIdleSpan.textContent, 'Idle');
+});

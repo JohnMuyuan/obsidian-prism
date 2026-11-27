@@ -707,20 +707,7 @@
       const d = docOf();
       if (!isMotionUltra() || !formalConv || !d) return;
       const now = nowOf();
-      for (const n of qsa(d, '.ag-cs-liftoff-veil')) n.remove();
-      const veil = d.createElement('div');
-      veil.className = 'ag-cs-liftoff-veil';
-      sa(veil, 'aria-hidden', 'true');
-      sa(veil, 'data-ag-no-i18n', '');
-      sa(veil, 'data-ag-owned', '1');
       const r = lastHomeRect;
-      setProp(veil, '--ag-lift-x', r && r.width > 0 ? `${Math.round(r.left + r.width / 2)}px` : '50%');
-      setProp(veil, '--ag-lift-y', r && r.height > 0 ? `${Math.round(r.top + r.height / 2)}px` : '58%');
-      const ring = d.createElement('div');
-      ring.className = 'ag-cs-liftoff-ring';
-      veil.appendChild(ring);
-      d.body?.appendChild(veil);
-      scheduleTransient(() => veil.remove(), 540);
 
       const inputBox = qs(formalConv, '[data-testid="agent-input-box"]') || qs(d, '[data-testid="agent-input-box"]');
       if (inputBox && typeof motionEngine?.spring === 'function') {
@@ -738,7 +725,7 @@
           motionEngine.spring(
             inputBox,
             [{ transform: `translateY(${dy}px) scale(${hostFade ? 0.996 : 0.985})` }, { transform: 'translateY(0) scale(1)' }],
-            { durationMs: hostFade ? 220 : 480, stiffness: hostFade ? 360 : 310, damping: hostFade ? 32 : 28, slot: 'liftoff-dock' }
+            { durationMs: hostFade ? 200 : 340, stiffness: hostFade ? 380 : 370, damping: hostFade ? 34 : 31, slot: 'liftoff-dock' }
           );
         } catch {}
       }
@@ -1005,9 +992,9 @@
           }
           d.body?.appendChild(pill);
           try {
-            motionEngine?.glideIndicator?.(pill, fromRect, curSnap, { durationMs: 240, stiffness: 390, damping: 32, mass: 0.9 });
+            motionEngine?.glideIndicator?.(pill, fromRect, curSnap, { durationMs: 210, stiffness: 420, damping: 34, mass: 0.88 });
           } catch {}
-          scheduleTransient(() => pill.remove(), 260);
+          scheduleTransient(() => pill.remove(), 225);
         }
         if (isMotionUltra()) {
           const dir = selIdx < sbIndex ? 'down' : 'up';
@@ -1020,6 +1007,8 @@
             : null;
           const targets = matchedVp ? [matchedVp] : vps;
           for (const vp of targets) {
+            if (ha(vp, 'data-ag-cs-stage-glide')) ra(vp, 'data-ag-cs-stage-glide');
+            for (const old of qsa(vp, '[data-ag-cs-glide-item]')) ra(old, 'data-ag-cs-glide-item');
             sa(vp, 'data-ag-cs-stage-glide', dir);
             const kids = vp.children ? AF(vp.children) : [];
             const glideKids = kids.slice(M.max(0, kids.length - 3));
@@ -1029,7 +1018,7 @@
               for (const ch of glideKids) {
                 if (isConn(ch) && ga(ch, 'data-ag-cs-glide-item') === dir) ra(ch, 'data-ag-cs-glide-item');
               }
-            }, 220);
+            }, 195);
           }
         }
       }
@@ -1314,7 +1303,6 @@
         if (!d) return;
         for (const el of qsa(d, '[data-ag-cs-thought-streaming]')) ra(el, 'data-ag-cs-thought-streaming');
         if (!isMotionUltra()) {
-          for (const el of qsa(d, '.ag-cs-liftoff-veil')) el.remove();
           for (const attr of [
             'data-ag-cs-liftoff-bubble',
             'data-ag-cs-caustic',
@@ -1667,6 +1655,7 @@
           setProp(ov, '--ag-origin-x', `${Math.round(Math.max(-40, Math.min(r.width + 40, trig.x - r.left)))}px`);
           setProp(ov, '--ag-origin-y', `${Math.round(Math.max(-40, Math.min(r.height + 40, trig.y - r.top)))}px`);
         }
+        if (ga(ov, 'data-ag-cs-model-overlay') === '1' || qs(ov, '[data-testid="model-selector-panel"]')) continue;
         let idx = 0;
         for (const item of qsa(ov, '[role="option"], [role="menuitem"], [data-testid]')) {
           const role = ga(item, 'role');
@@ -1753,7 +1742,7 @@
         suppressEntryMotionUntil = M.max(suppressEntryMotionUntil, nowOf() + M.max(120, Number(ms) || 900));
         liftoffBubbleUntil = 0;
         const d = docOf();
-        if (d) for (const n of qsa(d, '.ag-cs-liftoff-veil,.ag-cs-sidebar-glide-pill')) n.remove();
+        if (d) for (const n of qsa(d, '.ag-cs-sidebar-glide-pill')) n.remove();
       },
       isEntryMotionSuppressed: () => suppressEntryMotionUntil > nowOf(),
       isStreamMutating: () => streamMutating,

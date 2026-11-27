@@ -3870,7 +3870,7 @@ test('Issue #78 + PR #77: sidebar-client matches data-ag-cs-theme=light, body.th
   assert.equal(clientSrc.includes('feGaussianBlur'), false, 'sidebar-client.js must not ship 11-filter feGaussianBlur SVG');
   assert.ok(clientSrc.includes('id="agy-brand-g0"') && clientSrc.includes('id="agy-brand-g2"'), 'brand SVG must use lightweight radialGradient fills');
   assert.equal(clientSrc.includes('blur(96px)'), false, 'aura orbs must not use blur(96px)');
-  assert.ok(clientSrc.includes('filter:blur(24px)'), 'aura orbs must cap blur at 24px');
+  assert.equal(/(?<!backdrop-)filter:blur\(/.test(clientSrc), false, 'aura orbs must avoid GPU blur filter passes and use soft radial gradients');
   assert.ok(clientSrc.includes('backdrop-filter:blur(12px) saturate(125%)'), 'vessel backdrop-filter must be downgraded to blur(12px) saturate(125%)');
 
   // 2) Extract CLIENT_CSS array rules and verify zero dark-fallback leaks on host light DOM (body.theme-light + html[data-ag-cs-theme="light"])

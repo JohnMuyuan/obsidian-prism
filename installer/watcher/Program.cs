@@ -66,6 +66,8 @@ namespace AgyClaudeStyle.Watcher
         private static string _pluginDir;
         private static string _logFile;
         private static string _pidFile;
+        private static string _capsFile;
+        private static int _queuedArchiveInFlight;
         private static bool _isWatch;
         private static bool _noNativeDaemon;
         private static bool _noRelaunchPrompt;
@@ -151,6 +153,7 @@ namespace AgyClaudeStyle.Watcher
             }
             _logFile = Path.Combine(_baseDir, "watch.log");
             _pidFile = Path.Combine(_baseDir, ".watch.pid");
+            _capsFile = Path.Combine(_baseDir, ".watch.caps.json");
             _isWatch = (mode == "watch");
 
             try
@@ -262,15 +265,55 @@ namespace AgyClaudeStyle.Watcher
             return null;
         }
 
+        private static void WriteWatcherCapsFile(int selfPid)
+        {
+            if (string.IsNullOrEmpty(_capsFile)) return;
+            try
+            {
+                if (CdpHelper.IsUnsafeReparsePoint(_capsFile)) return;
+                Dictionary<string, object> caps = new Dictionary<string, object>(StringComparer.Ordinal);
+                caps["schema"] = 1;
+                caps["pid"] = selfPid;
+                caps["archiveTaskQueue"] = 1;
+                caps["startedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+                string tmp = _capsFile + ".tmp." + selfPid;
+                if (CdpHelper.IsUnsafeReparsePoint(tmp)) return;
+                File.WriteAllText(tmp, MiniJson.Stringify(caps, false) + "\n", new UTF8Encoding(false));
+                CdpHelper.ClearReadOnlyAndHiddenAttributes(_capsFile);
+                if (File.Exists(_capsFile))
+                {
+                    File.Delete(_capsFile);
+                }
+                File.Move(tmp, _capsFile);
+            }
+            catch { }
+        }
+
         private static void ReleasePidFile(int selfPid)
         {
             try
             {
-                if (CdpHelper.IsUnsafeReparsePoint(_pidFile)) return;
-                int? current = ReadPidFile();
-                if (current.HasValue && current.Value == selfPid)
+                if (!CdpHelper.IsUnsafeReparsePoint(_pidFile))
                 {
-                    File.Delete(_pidFile);
+                    int? current = ReadPidFile();
+                    if (current.HasValue && current.Value == selfPid)
+                    {
+                        File.Delete(_pidFile);
+                    }
+                }
+            }
+            catch { }
+            try
+            {
+                if (!string.IsNullOrEmpty(_capsFile) && File.Exists(_capsFile) && !CdpHelper.IsUnsafeReparsePoint(_capsFile))
+                {
+                    string raw = File.ReadAllText(_capsFile, Encoding.UTF8).TrimStart('\uFEFF').Trim();
+                    Dictionary<string, object> parsed = MiniJson.ParseObject(raw);
+                    int capsPid = ReadPositiveIntField(parsed, "pid");
+                    if (capsPid == 0 || capsPid == selfPid)
+                    {
+                        File.Delete(_capsFile);
+                    }
                 }
             }
             catch { }
@@ -468,6 +511,7 @@ namespace AgyClaudeStyle.Watcher
                         if (pidTry < 3) Thread.Sleep(80 * (pidTry + 1));
                     }
                 }
+                WriteWatcherCapsFile(selfPid);
                 try
                 {
                     if (!CdpHelper.IsUnsafeReparsePoint(_logFile))
@@ -1178,9 +1222,12 @@ namespace AgyClaudeStyle.Watcher
                                 consecutiveProbePort = previewRawPort;
                             }
 
+                            TryDispatchQueuedArchiveTask();
+
+                            bool queuedArchiveBusy = Volatile.Read(ref _queuedArchiveInFlight) != 0;
                             bool nativeAlive = !string.IsNullOrEmpty(_pluginDir) && CdpHelper.IsNativeDaemonAlive(_pluginDir);
                             ActivePortProbeResult portProbe = null;
-                            if (!nativeAlive)
+                            if (!nativeAlive && !queuedArchiveBusy)
                             {
                                 portProbe = await CdpHelper.ProbeActivePortAsync(overridePort, hasActiveAttached, consecutiveProbeFailures).ConfigureAwait(false);
                                 if (!_noNativeDaemon && !string.IsNullOrEmpty(_pluginDir))
@@ -1196,6 +1243,11 @@ namespace AgyClaudeStyle.Watcher
                                         }
                                     }
                                 }
+                            }
+                            if (queuedArchiveBusy)
+                            {
+                                exitEvent.Wait(500);
+                                continue;
                             }
                             if (nativeAlive)
                             {
@@ -1641,17 +1693,176 @@ namespace AgyClaudeStyle.Watcher
             return 0;
         }
 
-        private static bool HasActiveArchiveLockOrRecentRestore()
+        private static string ResolveConversationsArchiveDir()
+        {
+            string home = Environment.GetEnvironmentVariable("USERPROFILE");
+            if (string.IsNullOrEmpty(home)) home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) ?? "";
+            if (string.IsNullOrEmpty(home)) return "";
+            return Path.Combine(home, Path.Combine(".gemini", Path.Combine("antigravity", "conversations_archive")));
+        }
+
+        internal static bool TryClaimQueuedArchiveTaskFile(string archiveDir, out string claimedPath)
+        {
+            claimedPath = null;
+            if (string.IsNullOrEmpty(archiveDir) || !Directory.Exists(archiveDir)) return false;
+            if (CdpHelper.IsUnsafeReparsePoint(archiveDir)) return false;
+            try
+            {
+                string[] files = Directory.GetFiles(archiveDir, ".archive-queue-*.json");
+                if (files == null || files.Length == 0) return false;
+                Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < files.Length; i++)
+                {
+                    string f = files[i];
+                    if (string.IsNullOrEmpty(f) || CdpHelper.IsUnsafeReparsePoint(f)) continue;
+                    FileInfo fi = new FileInfo(f);
+                    if (!fi.Exists || fi.Length <= 0 || fi.Length > 256 * 1024) continue;
+                    string name = Path.GetFileName(f);
+                    if (!name.StartsWith(".archive-queue-", StringComparison.Ordinal)) continue;
+                    string suffix = name.Substring(".archive-queue-".Length);
+                    if (string.IsNullOrEmpty(suffix) || suffix.IndexOfAny(new char[] { '\\', '/', ':' }) >= 0) continue;
+                    string dst = Path.Combine(archiveDir, ".archive-claimed-" + suffix);
+                    if (CdpHelper.IsUnsafeReparsePoint(dst)) continue;
+                    try
+                    {
+                        File.Move(f, dst);
+                        claimedPath = dst;
+                        return true;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private static bool TryDispatchQueuedArchiveTask()
+        {
+            if (Interlocked.CompareExchange(ref _queuedArchiveInFlight, 1, 0) != 0)
+            {
+                return false;
+            }
+            string claimedPath = null;
+            try
+            {
+                string archiveDir = ResolveConversationsArchiveDir();
+                if (string.IsNullOrEmpty(archiveDir) || !Directory.Exists(archiveDir))
+                {
+                    Interlocked.Exchange(ref _queuedArchiveInFlight, 0);
+                    return false;
+                }
+                if (!TryClaimQueuedArchiveTaskFile(archiveDir, out claimedPath) || string.IsNullOrEmpty(claimedPath))
+                {
+                    Interlocked.Exchange(ref _queuedArchiveInFlight, 0);
+                    return false;
+                }
+                string scriptPath = ResolveConversationArchiveScriptPath();
+                if (string.IsNullOrEmpty(scriptPath))
+                {
+                    try { if (File.Exists(claimedPath)) File.Delete(claimedPath); } catch { }
+                    Interlocked.Exchange(ref _queuedArchiveInFlight, 0);
+                    return false;
+                }
+                string runtimeExe = CdpHelper.FindFallbackNodeExecutable();
+                bool useElectronAsNode = false;
+                if (string.IsNullOrEmpty(runtimeExe))
+                {
+                    runtimeExe = CdpHelper.FindAntigravityExecutable(null);
+                    useElectronAsNode = !string.IsNullOrEmpty(runtimeExe);
+                }
+                if (string.IsNullOrEmpty(runtimeExe) || !File.Exists(runtimeExe))
+                {
+                    try { if (File.Exists(claimedPath)) File.Delete(claimedPath); } catch { }
+                    Interlocked.Exchange(ref _queuedArchiveInFlight, 0);
+                    return false;
+                }
+                string taskFileForWorker = claimedPath;
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        ProcessStartInfo psi = new ProcessStartInfo();
+                        psi.FileName = runtimeExe;
+                        psi.Arguments = "\"" + scriptPath + "\" \"--run-task=" + taskFileForWorker + "\"";
+                        psi.WorkingDirectory = Path.GetTempPath();
+                        psi.UseShellExecute = false;
+                        psi.CreateNoWindow = true;
+                        psi.WindowStyle = ProcessWindowStyle.Hidden;
+                        if (useElectronAsNode)
+                        {
+                            psi.EnvironmentVariables["ELECTRON_RUN_AS_NODE"] = "1";
+                        }
+                        else if (psi.EnvironmentVariables.ContainsKey("ELECTRON_RUN_AS_NODE"))
+                        {
+                            psi.EnvironmentVariables.Remove("ELECTRON_RUN_AS_NODE");
+                        }
+                        using (Process proc = Process.Start(psi))
+                        {
+                            if (proc == null) return;
+                            Log(InstallerI18n.TrFormat(
+                                "[storage-guard] Watcher 已脱离宿主 Job Object 接管离线归档/还原任务 (PID {0})",
+                                "[storage-guard] Watcher dispatched queued offline archive/restore task outside host Job Object (PID {0})",
+                                proc.Id
+                            ));
+                            bool exited = proc.WaitForExit(180000);
+                            if (exited)
+                            {
+                                Log(InstallerI18n.TrFormat(
+                                    "[storage-guard] 离线归档/还原任务已结束 (exitCode={0})",
+                                    "[storage-guard] Queued offline archive/restore task finished (exitCode={0})",
+                                    proc.ExitCode
+                                ));
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log(InstallerI18n.TrFormat(
+                            "[storage-guard] Watcher 接管离线归档/还原任务异常: {0}",
+                            "[storage-guard] Watcher queued archive/restore task error: {0}",
+                            ex.Message
+                        ));
+                    }
+                    finally
+                    {
+                        try { if (File.Exists(taskFileForWorker) && !CdpHelper.IsUnsafeReparsePoint(taskFileForWorker)) File.Delete(taskFileForWorker); } catch { }
+                        Interlocked.Exchange(ref _queuedArchiveInFlight, 0);
+                    }
+                });
+                return true;
+            }
+            catch
+            {
+                try { if (!string.IsNullOrEmpty(claimedPath) && File.Exists(claimedPath)) File.Delete(claimedPath); } catch { }
+                Interlocked.Exchange(ref _queuedArchiveInFlight, 0);
+                return false;
+            }
+        }
+
+        internal static bool HasActiveArchiveLockOrRecentRestore()
         {
             try
             {
-                string home = Environment.GetEnvironmentVariable("USERPROFILE");
-                if (string.IsNullOrEmpty(home)) home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) ?? "";
-                if (string.IsNullOrEmpty(home)) return false;
-                string archiveDir = Path.Combine(home, Path.Combine(".gemini", Path.Combine("antigravity", "conversations_archive")));
-                if (!Directory.Exists(archiveDir)) return false;
+                if (Volatile.Read(ref _queuedArchiveInFlight) != 0) return true;
+                string archiveDir = ResolveConversationsArchiveDir();
+                if (string.IsNullOrEmpty(archiveDir) || !Directory.Exists(archiveDir)) return false;
                 // 归档目录若为不安全重解析点/符号链接，一律 fail-closed 拦截
                 if (CdpHelper.IsUnsafeReparsePoint(archiveDir)) return true;
+
+                try
+                {
+                    string[] queued = Directory.GetFiles(archiveDir, ".archive-queue-*.json");
+                    for (int qi = 0; qi < queued.Length; qi++)
+                    {
+                        if ((DateTime.UtcNow - File.GetLastWriteTimeUtc(queued[qi])).TotalSeconds < 180.0) return true;
+                    }
+                    string[] claimed = Directory.GetFiles(archiveDir, ".archive-claimed-*.json");
+                    for (int ci = 0; ci < claimed.Length; ci++)
+                    {
+                        if ((DateTime.UtcNow - File.GetLastWriteTimeUtc(claimed[ci])).TotalSeconds < 180.0) return true;
+                    }
+                }
+                catch { }
 
                 string lockPath = Path.Combine(archiveDir, ".archive.lock");
                 if (File.Exists(lockPath))

@@ -4,7 +4,7 @@
 // - Live Upstream Discovery: GET /v1/models & real-time latency test message
 // - Privacy & Open-Source Cleanliness: Keys & custom prompts live strictly in ~/.gemini/config/ (0600), NEVER in Git!
 
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import dns from 'node:dns';
 import fs from 'node:fs';
@@ -1295,6 +1295,20 @@ export class ThoughtTranslatorService {
     this._hasDiskFile = false;
     this._cacheEpoch = 0;
     this._config = null;
+    this._disposed = false;
+    this._manageLocalOllama =
+      opts.manageLocalOllama !== undefined ? Boolean(opts.manageLocalOllama) : !this._hasCustomFetch;
+    this._ollamaBin = typeof opts.ollamaBin === 'string' ? opts.ollamaBin : '';
+    this._ollamaSpawnImpl = typeof opts.ollamaSpawnImpl === 'function' ? opts.ollamaSpawnImpl : null;
+    this._ollamaProbeImpl = typeof opts.ollamaProbeImpl === 'function' ? opts.ollamaProbeImpl : null;
+    this._ollamaKeepAlive = typeof opts.ollamaKeepAlive === 'string' && opts.ollamaKeepAlive.trim() ? opts.ollamaKeepAlive.trim() : '3m';
+    this._ollamaIdleMs = Math.max(0, Number(opts.ollamaIdleMs ?? 10 * 60 * 1000) || 0);
+    this._ollamaReadyTimeoutMs = Math.max(500, Number(opts.ollamaReadyTimeoutMs) || 10000);
+    this._managedOllamaChild = null;
+    this._managedOllamaOrigin = '';
+    this._ollamaStartPromise = null;
+    this._ollamaIdleTimer = null;
+    this._ollamaProcessExitHook = null;
   }
 
   _defaultStore() {
@@ -2582,7 +2596,267 @@ export class ThoughtTranslatorService {
     });
   }
 
+  _parseLocalOllamaEndpoint(rawUrl) {
+    try {
+      const u = rawUrl instanceof URL ? rawUrl : new URL(String(rawUrl || ''));
+      if (u.protocol !== 'http:') return null;
+      const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+      if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') return null;
+      const port = u.port || '80';
+      if (port !== '11434') return null;
+      return {
+        origin: `http://127.0.0.1:${port}`,
+        bindHost: `127.0.0.1:${port}`,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  _resolveOllamaExecutable() {
+    if (this._ollamaBin) return this._ollamaBin;
+    const plat = this._proxyPlatform || process.platform;
+    if (plat === 'win32') {
+      const localApp = (this._proxyEnv || process.env)?.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+      const candidates = [
+        path.join(localApp, 'Programs', 'Ollama', 'ollama.exe'),
+        path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Ollama', 'ollama.exe'),
+      ];
+      for (const c of candidates) {
+        try {
+          if (c && fs.existsSync(c)) return c;
+        } catch {}
+      }
+      return 'ollama.exe';
+    }
+    for (const c of ['/opt/homebrew/bin/ollama', '/usr/local/bin/ollama']) {
+      try {
+        if (fs.existsSync(c)) return c;
+      } catch {}
+    }
+    return 'ollama';
+  }
+
+  _probeLocalOllama(origin, timeoutMs = 450) {
+    if (this._ollamaProbeImpl) {
+      return Promise.resolve(this._ollamaProbeImpl(origin)).then(Boolean).catch(() => false);
+    }
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (val) => {
+        if (settled) return;
+        settled = true;
+        resolve(Boolean(val));
+      };
+      try {
+        const req = http.request(
+          `${origin}/api/version`,
+          { method: 'GET', timeout: timeoutMs },
+          (res) => {
+            res.resume();
+            done(res.statusCode >= 200 && res.statusCode < 500);
+          }
+        );
+        req.on('timeout', () => {
+          try { req.destroy(); } catch {}
+          done(false);
+        });
+        req.on('error', () => done(false));
+        req.end();
+      } catch {
+        done(false);
+      }
+    });
+  }
+
+  _touchManagedOllamaIdleTimer() {
+    if (this._ollamaIdleTimer) {
+      clearTimeout(this._ollamaIdleTimer);
+      this._ollamaIdleTimer = null;
+    }
+    if (!this._managedOllamaChild || !this._ollamaIdleMs || this._disposed) return;
+    this._ollamaIdleTimer = setTimeout(() => {
+      this._ollamaIdleTimer = null;
+      void this.stopManagedOllama();
+    }, this._ollamaIdleMs);
+    this._ollamaIdleTimer.unref?.();
+  }
+
+  _unloadLocalOllamaModels(origin, timeoutMs = 600) {
+    if (!origin || this._ollamaProbeImpl) return Promise.resolve();
+    const postJson = (pathname, bodyObj) =>
+      new Promise((resolve) => {
+        try {
+          const payload = JSON.stringify(bodyObj);
+          const req = http.request(
+            `${origin}${pathname}`,
+            {
+              method: 'POST',
+              timeout: timeoutMs,
+              headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+            },
+            (res) => {
+              res.resume();
+              res.on('end', () => resolve());
+            }
+          );
+          req.on('timeout', () => { try { req.destroy(); } catch {} resolve(); });
+          req.on('error', () => resolve());
+          req.write(payload);
+          req.end();
+        } catch {
+          resolve();
+        }
+      });
+    return new Promise((resolve) => {
+      try {
+        const req = http.request(`${origin}/api/ps`, { method: 'GET', timeout: timeoutMs }, (res) => {
+          let raw = '';
+          res.setEncoding('utf8');
+          res.on('data', (c) => { if (raw.length < 65536) raw += c; });
+          res.on('end', () => {
+            try {
+              const parsed = JSON.parse(raw);
+              const models = Array.isArray(parsed?.models)
+                ? parsed.models.map((m) => String(m?.name || m?.model || '').trim()).filter(Boolean)
+                : [];
+              if (!models.length) return resolve();
+              Promise.all(models.map((model) => postJson('/api/generate', { model, keep_alive: 0 }))).then(() => resolve());
+            } catch {
+              resolve();
+            }
+          });
+        });
+        req.on('timeout', () => { try { req.destroy(); } catch {} resolve(); });
+        req.on('error', () => resolve());
+        req.end();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  async stopManagedOllama() {
+    if (this._ollamaIdleTimer) {
+      clearTimeout(this._ollamaIdleTimer);
+      this._ollamaIdleTimer = null;
+    }
+    if (this._ollamaProcessExitHook) {
+      try { process.off('exit', this._ollamaProcessExitHook); } catch {}
+      this._ollamaProcessExitHook = null;
+    }
+    const child = this._managedOllamaChild;
+    const origin = this._managedOllamaOrigin;
+    this._managedOllamaChild = null;
+    this._managedOllamaOrigin = '';
+    if (!child) return false;
+    try {
+      if (origin && !child.killed && child.exitCode === null) {
+        await this._unloadLocalOllamaModels(origin, 500);
+      }
+    } catch {}
+    try {
+      if (!child.killed && child.exitCode === null) {
+        child.kill();
+      }
+    } catch {}
+    return true;
+  }
+
+  async _ensureLocalOllamaForUrl(rawUrl) {
+    if (!this._manageLocalOllama || this._disposed) return false;
+    const ep = this._parseLocalOllamaEndpoint(rawUrl);
+    if (!ep) return false;
+    if (await this._probeLocalOllama(ep.origin)) {
+      if (this._managedOllamaChild) this._touchManagedOllamaIdleTimer();
+      return true;
+    }
+    if (this._ollamaStartPromise) {
+      return this._ollamaStartPromise;
+    }
+    const startTask = (async () => {
+      const bin = this._resolveOllamaExecutable();
+      const spawnFn = this._ollamaSpawnImpl || spawn;
+      const childEnv = { ...(this._proxyEnv || process.env) };
+      for (const k of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']) {
+        delete childEnv[k];
+      }
+      childEnv.NO_PROXY = '127.0.0.1,localhost';
+      childEnv.OLLAMA_HOST = ep.bindHost;
+      childEnv.OLLAMA_KEEP_ALIVE = this._ollamaKeepAlive;
+      if (!childEnv.OLLAMA_LLM_LIBRARY && bin && path.isAbsolute(bin)) {
+        try {
+          if (fs.existsSync(path.join(path.dirname(bin), 'lib', 'ollama', 'cuda_v12'))) {
+            childEnv.OLLAMA_LLM_LIBRARY = 'cuda_v12';
+          }
+        } catch {}
+      }
+      let child = null;
+      try {
+        child = spawnFn(bin, ['serve'], {
+          detached: false,
+          stdio: 'ignore',
+          windowsHide: true,
+          env: childEnv,
+        });
+      } catch {
+        return false;
+      }
+      if (!child) return false;
+      this._managedOllamaChild = child;
+      this._managedOllamaOrigin = ep.origin;
+      let exited = false;
+      const clearIfSame = () => {
+        exited = true;
+        if (this._managedOllamaChild === child) {
+          this._managedOllamaChild = null;
+          this._managedOllamaOrigin = '';
+        }
+        if (this._ollamaIdleTimer) {
+          clearTimeout(this._ollamaIdleTimer);
+          this._ollamaIdleTimer = null;
+        }
+      };
+      try { child.on?.('error', clearIfSame); } catch {}
+      try { child.on?.('exit', clearIfSame); } catch {}
+      try { child.unref?.(); } catch {}
+
+      if (this._ollamaProcessExitHook) {
+        try { process.off('exit', this._ollamaProcessExitHook); } catch {}
+      }
+      const exitHook = () => {
+        try {
+          if (child && !child.killed && child.exitCode === null) child.kill();
+        } catch {}
+      };
+      this._ollamaProcessExitHook = exitHook;
+      try { process.once('exit', exitHook); } catch {}
+
+      const deadline = Date.now() + this._ollamaReadyTimeoutMs;
+      while (!exited && !this._disposed && Date.now() < deadline) {
+        if (await this._probeLocalOllama(ep.origin, 350)) {
+          this._touchManagedOllamaIdleTimer();
+          return true;
+        }
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      await this.stopManagedOllama();
+      return false;
+    })();
+    this._ollamaStartPromise = startTask;
+    try {
+      return await startTask;
+    } finally {
+      if (this._ollamaStartPromise === startTask) {
+        this._ollamaStartPromise = null;
+      }
+    }
+  }
+
   async _request(url, init = {}, proxyOverride = null) {
+    if (this._manageLocalOllama) {
+      await this._ensureLocalOllamaForUrl(url);
+    }
     if (!this._hasCustomFetch) {
       const proxy = await this._resolveProxyForUrlAsync(url, proxyOverride);
       if (proxy) {
@@ -3582,6 +3856,8 @@ export class ThoughtTranslatorService {
   }
 
   dispose() {
+    this._disposed = true;
+    const stopPromise = this.stopManagedOllama();
     if (this._saveCacheTimer || this._flushDirty) {
       this._flushCacheToDisk();
     }
@@ -3596,6 +3872,7 @@ export class ThoughtTranslatorService {
       } catch {}
     }
     this.inflight.clear();
+    return stopPromise;
   }
 
   _shouldKeepMachineParagraph(paragraph, targetLang) {

@@ -1559,3 +1559,308 @@ test('Windows AV-clean archive runtime: pure Node detached spawn (node.exe & ELE
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
+
+test('Windows Job-Object fix: Watcher queue handoff, excludePids daemon guard, stale task pruning, false-alarm suppression, permanent mute & old-main restart UI', async () => {
+  const tmpRoot = makeTempDir('ag-prism-watcher-queue-');
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevStorage = globalThis.localStorage;
+  try {
+    const convDir = path.join(tmpRoot, 'conversations');
+    const archiveDir = path.join(tmpRoot, 'archive');
+    const watcherDir = path.join(tmpRoot, 'watcher');
+    const guardStatePath = path.join(tmpRoot, 'guard-state.json');
+    fs.mkdirSync(convDir, { recursive: true });
+    fs.mkdirSync(archiveDir, { recursive: true });
+    fs.mkdirSync(watcherDir, { recursive: true });
+
+    // 1) Watcher queue handoff via .watch.caps.json (live PID -> watcher-queue; dead PID -> null)
+    const capsPath = path.join(watcherDir, '.watch.caps.json');
+    fs.writeFileSync(
+      capsPath,
+      JSON.stringify({ schema: 1, pid: process.pid, archiveTaskQueue: 1, startedAt: new Date().toISOString() }) + '\n',
+      'utf8'
+    );
+    const liveOwner = arch.findLiveWatcherQueueOwner({
+      platform: 'win32',
+      capsPaths: [capsPath],
+      isPidAliveFn: (p) => p === process.pid,
+    });
+    assert.ok(liveOwner && liveOwner.pid === process.pid && liveOwner.archiveTaskQueue === 1);
+
+    const deadOwner = arch.findLiveWatcherQueueOwner({
+      platform: 'win32',
+      capsPaths: [capsPath],
+      isPidAliveFn: () => false,
+    });
+    assert.equal(deadOwner, null, 'Dead watcher PID must not be selected as queue owner');
+
+    const fakeNode = path.join(tmpRoot, 'node.exe');
+    const fakeScript = path.join(tmpRoot, 'conversation-archive.mjs');
+    fs.writeFileSync(fakeNode, 'stub', 'utf8');
+    fs.writeFileSync(fakeScript, '// stub\n', 'utf8');
+    const queuedRes = arch.spawnDetachedArchiveTask(
+      {
+        action: 'archive-and-restart',
+        convDir,
+        archiveDir,
+        hostPid: 1001,
+        daemonPid: 2002,
+        cdpPort: 9222,
+        gracefulQuit: true,
+        relaunch: true,
+        mode: 'subagents+old-main',
+        mainMaxAgeDays: 14,
+        keepRecentMain: 20,
+      },
+      {
+        platform: 'win32',
+        nodeExecPath: fakeNode,
+        scriptPath: fakeScript,
+        watcherCapsPaths: [capsPath],
+        isPidAliveFn: (p) => p === process.pid,
+      }
+    );
+    assert.equal(queuedRes.spawned, true);
+    assert.equal(queuedRes.method, 'watcher-queue');
+    assert.equal(queuedRes.pid, process.pid);
+    assert.ok(path.basename(queuedRes.taskFile).startsWith('.archive-queue-'));
+    const queuedPayload = JSON.parse(fs.readFileSync(queuedRes.taskFile, 'utf8'));
+    assert.equal(queuedPayload.mode, 'subagents+old-main');
+    assert.equal(queuedPayload.daemonPid, 2002);
+    assert.equal(queuedPayload.mainMaxAgeDays, 14);
+    assert.equal(queuedPayload.keepRecentMain, 20);
+
+    // 2) parseWindowsTasklistCsvDetailed excludePids skips independent Antigravity.exe daemon but NEVER skips language_server.exe
+    const csvWithDaemon = [
+      '"Antigravity.exe","2002","Console","1","90,000 K"',
+      '"node.exe","3003","Console","1","45,000 K"',
+    ].join('\r\n');
+    assert.equal(arch.parseWindowsTasklistCsvDetailed(csvWithDaemon, { selfPid: 9999, excludePids: [2002] }).running, false);
+    const csvWithLs = '"language_server.exe","2002","Console","1","280,000 K"';
+    assert.equal(
+      arch.parseWindowsTasklistCsvDetailed(csvWithLs, { selfPid: 9999, excludePids: [2002] }).running,
+      true,
+      'language_server.exe must NEVER be excluded by excludePids'
+    );
+
+    // 3) pruneStaleActiveArchiveTask removes stale dead-PID lock and keeps live-PID lock
+    const activeFile = path.join(archiveDir, '.archive-task-active.json');
+    fs.writeFileSync(
+      activeFile,
+      JSON.stringify({ schema: 1, action: 'restore-and-restart', pid: 99999999, startedAt: new Date(Date.now() - 120000).toISOString() }) + '\n',
+      'utf8'
+    );
+    const pruned = arch.pruneStaleActiveArchiveTask(archiveDir, { isPidAliveFn: () => false });
+    assert.equal(pruned.pruned, true);
+    assert.equal(fs.existsSync(activeFile), false);
+
+    // 4) False-alarm suppression & permanent mute in PrismDaemon._checkStorageGuardAndNotify
+    const now = Date.now();
+    const mainBig = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1';
+    writeSizedFile(path.join(convDir, `${mainBig}.db`), 1024, now - 3600000);
+    arch.saveCatalogIndex(archiveDir, {
+      [mainBig]: { summary: 'Huge Main', status: 'CASCADE_RUN_STATUS_IDLE', lastModifiedTime: new Date(now - 3600000).toISOString() },
+    });
+    const daemon = new PrismDaemon({
+      rootDir: ROOT,
+      storageGuardStatePath: guardStatePath,
+      enableStorageGuardTimer: false,
+      enableAutoUpdateTimer: false,
+      silent: true,
+    });
+    daemon.ensureLsClient = async () => ({ call: async () => ({ trajectorySummaries: {} }) });
+    const fakeSess = {
+      url: 'vscode-file://vscode-app/workbench.html',
+      title: 'Antigravity',
+      session: {
+        closed: false,
+        send: async (_m, p) => {
+          if (typeof p?.expression === 'string' && p.expression.includes('data-ag-cs-lang')) {
+            return { result: { value: 'zh-CN' } };
+          }
+          return { result: { value: { mounted: true } } };
+        },
+        evaluate: async () => ({ dismissed: true }),
+      },
+    };
+    daemon.sessions.set('ws://local-1', fakeSess);
+    // Simulate totalMb > 1536 purely from main chats (0 archivable subagents, healthy 300MB LS RAM)
+    const origHandle = daemon._handleStorageAction.bind(daemon);
+    daemon._handleStorageAction = async () => ({
+      ok: true,
+      totalMb: 1700,
+      mainCount: 95,
+      mainMb: 1660,
+      subagentCount: 5,
+      subagentMb: 30,
+      archivableSubagentCount: 0,
+      archivableSubagentMb: 0,
+      lsMemoryMb: 300,
+      warn: true,
+      warnReasons: ['total'],
+      autoArchiveOnExit: false,
+    });
+    const skippedMainOnly = await daemon._checkStorageGuardAndNotify({ checkIdle: async () => ({ idle: true }), now });
+    assert.equal(skippedMainOnly.shown, false);
+    assert.equal(skippedMainOnly.reason, 'nothing-archivable', 'Main-only DB >1.5GB with 0 archivable subagents and healthy RAM must NOT pop up nag banner');
+
+    // Permanent mute suppresses even >= 4GB LS RAM warning until unmuted
+    daemon._handleStorageAction = origHandle;
+    const muteRes = await daemon.executeRepoAction({ action: 'storage-snooze', muted: true });
+    assert.equal(muteRes.ok, true);
+    assert.equal(muteRes.guardMuted, true);
+    const mutedCheck = await daemon._checkStorageGuardAndNotify({ convDir, archiveDir, lsMemoryMb: 5000, checkIdle: async () => ({ idle: true }), now });
+    assert.equal(mutedCheck.shown, false);
+    assert.equal(mutedCheck.reason, 'muted');
+
+    const unmuteRes = await daemon.executeRepoAction({ action: 'storage-snooze', muted: false });
+    assert.equal(unmuteRes.ok, true);
+    assert.equal(unmuteRes.guardMuted, false);
+    const unmutedCheck = await daemon._checkStorageGuardAndNotify({ convDir, archiveDir, lsMemoryMb: 5000, checkIdle: async () => ({ idle: true }), now: now + 1000 });
+    assert.equal(unmutedCheck.shown, true);
+
+    // 5) storage-guard-ui banner includes permanent mute button
+    const bannerCode = buildStorageGuardBannerExpression({ copy: { muteForeverBtn: 'Mute Forever' } });
+    assert.ok(bannerCode.includes('data-ag-sg-action') && bannerCode.includes('mute-forever'));
+
+    // 6) settings-panel displays lastArchiveResult, calm status for main-heavy 0-subagent DB, permanent mute & >14d restart button
+    const { doc } = createMiniDom();
+    const sMap = new Map([['ag-prism:settings-open', '1'], ['ag-prism:settings-subtab', 'about']]);
+    const storage = {
+      getItem: (k) => (sMap.has(k) ? sMap.get(k) : null),
+      setItem: (k, v) => sMap.set(k, String(v)),
+      removeItem: (k) => sMap.delete(k),
+    };
+    const uiCalls = [];
+    globalThis.document = doc;
+    globalThis.localStorage = storage;
+    globalThis.window = {
+      document: doc,
+      localStorage: storage,
+      __agPrismRepoBridge: (p) => {
+        uiCalls.push(p);
+        if (p.action === 'storage-health') {
+          return {
+            ok: true,
+            totalMb: 1680,
+            mainCount: 95,
+            subagentCount: 7,
+            subagentMb: 34,
+            archivableSubagentCount: 0,
+            archivableSubagentMb: 0,
+            lsMemoryMb: 282,
+            warn: true,
+            warnReasons: ['total'],
+            guardMuted: false,
+            lastArchiveResult: { ok: true, action: 'archive', movedCount: 235, movedMb: 1836.2 },
+          };
+        }
+        return { ok: true };
+      },
+    };
+    const stObj = { ...settingsPanel.getDefaultSettingsPatch(), language: 'en' };
+    settingsPanel.mountOrSyncSettingsSection({
+      version: '1.0.8',
+      getLang: () => 'en',
+      uiText: (l) => i18nLocales.getUiStrings(l),
+      isZh: () => false,
+      i18nCore,
+      formatSettingsSummary: () => 'summary',
+      resolveSettingRowActiveValue: (k) => stObj[k],
+      isSettingButtonMatch: (_k, valJson, cur) => JSON.parse(valJson) === cur,
+      saveSetting: (k, v) => { stObj[k] = v; },
+      saveSettingsBatch: (p) => Object.assign(stObj, p),
+      getThoughtTranslateMode: () => stObj.thoughtTranslate,
+      handledGroupClicks: new WeakSet(),
+      runSettingsGroupGlide: () => {},
+      runGuardedMut: (fn) => fn(),
+    });
+    await new Promise((r) => setTimeout(r, 15));
+    const sec = doc.getElementById(settingsPanel.SETTINGS_SEC_ID);
+    const statusBadge = sec.querySelector('[data-ag-cs-storage-status]');
+    assert.equal(statusBadge.getAttribute('data-status'), 'ok', 'Main-only >1.5GB DB with 0 archivable subagents and low RAM should show calm ok status');
+    const actionChip = sec.querySelector('[data-ag-cs-archive-action-status]');
+    assert.equal(actionChip.hidden, false, 'Last archive result must be surfaced in UI');
+    assert.ok(actionChip.textContent.includes('235'));
+    // Mute forever toggle calls storage-snooze with muted:true
+    sec.querySelector('[data-ag-cs-guard-mute="on"]').click();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.ok(uiCalls.some((c) => c.action === 'storage-snooze' && c.muted === true));
+    // Old-main restart button inside drawer confirm box triggers archive-and-restart with mode:'subagents+old-main'
+    sec.querySelector('[data-ag-cs-storage-old="1"]').click();
+    sec.querySelector('[data-ag-cs-storage-old-restart="1"]').click();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.ok(uiCalls.some((c) => c.action === 'archive-and-restart' && c.mode === 'subagents+old-main' && c.confirm === true));
+
+    // 7) Windows C# Watcher compiles with /warnaserror and claims .archive-queue-*.json atomically
+    if (process.platform === 'win32') {
+      const cscPath = path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
+      if (fs.existsSync(cscPath)) {
+        const csDir = path.join(tmpRoot, 'cs-queue-test');
+        fs.mkdirSync(csDir, { recursive: true });
+        const harnessCs = path.join(csDir, 'QueueHarness.cs');
+        const harnessExe = path.join(csDir, 'QueueHarness.exe');
+        fs.writeFileSync(
+          harnessCs,
+          [
+            'using System;',
+            'namespace AgyClaudeStyle.Watcher {',
+            '  public static class QueueHarness {',
+            '    public static int Main(string[] args) {',
+            '      bool lockedBefore = Program.HasActiveArchiveLockOrRecentRestore();',
+            '      string claimedPath;',
+            '      bool claimed = Program.TryClaimQueuedArchiveTaskFile(args[0], out claimedPath);',
+            '      Console.WriteLine((lockedBefore ? "LOCKED" : "OPEN") + "|" + (claimed ? "CLAIMED" : "NONE") + "|" + (claimedPath ?? ""));',
+            '      return 0;',
+            '    }',
+            '  }',
+            '}',
+          ].join('\n'),
+          'utf8'
+        );
+        execFileSync(
+          cscPath,
+          [
+            '/nologo',
+            '/utf8output',
+            '/codepage:65001',
+            '/warnaserror',
+            '/target:exe',
+            '/main:AgyClaudeStyle.Watcher.QueueHarness',
+            '/r:System.dll',
+            '/r:System.Core.dll',
+            '/r:System.Net.Http.dll',
+            `/out:${harnessExe}`,
+            path.join(ROOT, 'installer/common/MiniJson.cs'),
+            path.join(ROOT, 'installer/common/CdpClient.cs'),
+            path.join(ROOT, 'installer/watcher/Program.cs'),
+            harnessCs,
+          ],
+          { windowsHide: true, stdio: 'pipe' }
+        );
+        const fakeHome = path.join(csDir, 'home');
+        const fakeArch = path.join(fakeHome, '.gemini', 'antigravity', 'conversations_archive');
+        fs.mkdirSync(fakeArch, { recursive: true });
+        fs.writeFileSync(path.join(fakeArch, '.archive-queue-aabbcc112233.json'), '{"schema":1,"action":"archive-and-restart"}\n', 'utf8');
+        const out = execFileSync(harnessExe, [fakeArch], {
+          encoding: 'utf8',
+          windowsHide: true,
+          env: { ...process.env, USERPROFILE: fakeHome },
+        }).trim();
+        const [lockState, claimState, claimedFile] = out.split('|');
+        assert.equal(lockState, 'LOCKED', 'Queued archive task must cause HasActiveArchiveLockOrRecentRestore to yield');
+        assert.equal(claimState, 'CLAIMED');
+        assert.ok(path.basename(claimedFile).startsWith('.archive-claimed-'));
+        assert.equal(fs.existsSync(claimedFile), true);
+      }
+    }
+
+    await daemon.stop(false, { skipAutoArchive: true });
+  } finally {
+    if (prevDoc === undefined) delete globalThis.document; else globalThis.document = prevDoc;
+    if (prevWin === undefined) delete globalThis.window; else globalThis.window = prevWin;
+    if (prevStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = prevStorage;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});

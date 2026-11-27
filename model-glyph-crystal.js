@@ -459,7 +459,7 @@
       }
       if (mPanel && mPanel !== panel) { teardownCrystalMount(); syncModelMenuAttrs(panel); }
 
-      syncPanelRowGlyphs(panel);
+      if (ga(panel, 'data-ces-view') !== 'effort') syncPanelRowGlyphs(panel);
       if (isEffortSliderOff()) { qa(panel, '[data-testid="orchestrator-effort-bar"]').forEach((b) => b.remove?.()); stopCrystalOnPanel(panel); return; }
       const isOrch = detectPanelIsOrchestrator(panel, primaryModelInfo);
       const isOrchTunable = isOrch && ga(panel, 'data-ces-orch-tunable') === 'true';
@@ -472,6 +472,14 @@
       const slot = cesSec || panel;
 
       let bar = qs(panel, '[data-testid="orchestrator-effort-bar"]');
+      if (!isOrch && !bar) {
+        clearSliderPrismOverlay(panel);
+        if (mInst) { cancelMountRaf(); cancelStepRaf(); try { mInst.dispose?.(); } catch {} mInst = null; }
+        mPanel = panel; mBar = mTrk = mCv = null; mWasOrch = mHideLock = false;
+        ra(panel, 'data-ag-cs-orch-active');
+        qa(panel, EFF_ROW_SEL).forEach((row) => { setAttrIfChanged(row, 'data-row-hidden', 'false'); setAttrIfChanged(row, 'aria-hidden', 'false'); });
+        return;
+      }
       if (!bar) {
         bar = markNoTr(mk('div', 'ces-ag-effort-row ag-cs-orch-row'));
         sa(bar, 'data-testid', 'orchestrator-effort-bar'); sa(bar, 'data-ag-no-i18n'); sa(bar, 'data-ag-owned', '1');

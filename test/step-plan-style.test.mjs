@@ -26,14 +26,18 @@ test('step-plan checklist card and home-panel align with Obsidian Prism floating
   const spLine = css.split('\n').find((l) => l.includes('[data-testid="step-plan-item"]{')) || '';
   assert.ok(spLine.length > 0, 'must style step-plan-item');
 
-  // PR #43 + v1.0.8 layered monochrome mirror optics & 5-state obsidian star-core icons on step-plan
+  // Flat surface alignment & 5-state obsidian star-core icons on step-plan
   assert.ok(spLine.includes('& [data-testid="step-plan"]{'), 'must style step-plan card');
   assert.ok(spLine.includes('border-radius:13px !important;'), 'step-plan must match overview-shell 13px radius');
   assert.ok(spLine.includes('var(--ag-cs-menu-bg,var(--ag-cs-panel-bg,rgba(14,16,22,.94)))'), 'step-plan must share overview-shell dark obsidian surface');
-  assert.ok(spLine.includes('radial-gradient(108% 52px at 50% 0%,rgba(168,200,255,.048) 0%,transparent 74%),var(--ag-cs-menu-sheen)'), 'step-plan must layer restrained cool-silver top diffusion over sheen');
+  assert.ok(spLine.includes('background-image:var(--ag-cs-menu-sheen) !important;'), 'step-plan must use flat menu-sheen token (no glossy radial dome)');
   assert.ok(spLine.includes('var(--ag-cs-menu-bd)'), 'step-plan must share overview-shell 1px stepped border');
-  assert.ok(spLine.includes('inset 0 1px 0 rgba(235,243,255,.14)'), 'step-plan must render crisp icy-silver top specular edge');
-  assert.ok(spLine.includes('&[data-ag-sp-running="1"]{') && spLine.includes('rgba(56,176,255,.15)'), 'running step-plan must render nebula cyan-violet top ambient glow');
+  assert.ok(spLine.includes('box-shadow:none !important;'), 'step-plan must stay flat without skeuomorphic top specular bevel or heavy drop shadow');
+  assert.ok(spLine.includes('&[data-ag-sp-running="1"]{') && spLine.includes('border-color:rgba(126,196,255,.26)'), 'running step-plan must use subtle crisp border highlight');
+  // Flat design tokens across buttons, switches, composer & cards
+  assert.ok(baseSection.includes('--ag-cs-specular:transparent;--_sp:none;--_sh:none;'), 'base theme tokens must disable skeuomorphic specular bevels and glossy sheen');
+  assert.ok(baseSection.includes('--_ks2:none;--_kw:none;--ag-cs-menu-sheen:none;'), 'base theme tokens must flatten raised keycaps and recessed trough shadows');
+  assert.ok(baseSection.includes('--_g2:transparent;--_g3:none;'), 'send button tokens must stay flat with no glossy gradient or 3D shadow');
   assert.ok(spLine.includes('& [data-testid="step-plan-chip"]{'), 'must style step-plan-chip');
   assert.ok(spLine.includes('&[data-status="in_progress"]{--_sc:var(--warning);') && spLine.includes('&>svg{'), 'must differentiate paused in_progress svg with static amber obsidian core');
   assert.ok(spLine.includes('&[data-status="done"]{--_sc:var(--success);') && spLine.includes('drop-shadow('), 'done state must render obsidian star-core emerald ring + glowing checkmark');
@@ -43,9 +47,16 @@ test('step-plan checklist card and home-panel align with Obsidian Prism floating
   assert.ok(spLine.includes('translate:-50% -50%;') && !spLine.includes('transform:translate('), 'pseudo-element centering must use individual translate before individual rotate');
   assert.equal(spLine.includes('opacity:'), false, 'step-plan-item text must not stack low opacity over --muted-foreground');
 
-  // Overview-shell & step-plan 4s GPU opacity breathing ambient + strict pause guards
-  assert.ok(baseSection.includes('@keyframes ag-ov-br{'), 'must define GPU-only opacity breathing keyframe for running ambient');
-  assert.ok(baseSection.includes('animation:ag-ov-br 4s ease-in-out infinite;'), 'running overview-shell & step-plan ::after must breathe over 4s');
+  // Overview-shell & step-plan running ::after drops colored blue/purple ambient glow while keeping pause guards
+  assert.ok(baseSection.includes('@keyframes ag-ov-br{'), 'must keep ag-ov-br keyframe definition');
+  assert.ok(
+    baseSection.includes('& [data-ag-cs-overview-shell="1"][data-ag-overview-running="1"]::after,& [data-testid="step-plan"][data-ag-sp-running="1"]::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:1;background:none;}'),
+    'running overview-shell & step-plan ::after must stay flat with no colored ambient glow'
+  );
+  assert.ok(
+    baseSection.includes('& [data-testid="status-loading-spinner"]{box-shadow:none !important;}'),
+    'running subagent/background task spinner must not carry blue/purple outer halo'
+  );
   assert.ok(baseSection.includes('[data-ag-overview-running="1"]::after,& [data-ag-sp-running="1"]::after,') && baseSection.includes('animation-play-state:paused !important;'), 'win-blur/pp-open must pause running ambient breathing');
   assert.ok(baseSection.includes('html[data-ag-cs-style]:not(#_) :is(.no-transitions,.no-transitions *){transition:none !important;animation:none !important;}'), 'must preserve v2.35.1 .no-transitions session-switch freeze');
   assert.ok(baseSection.includes('& [data-lexical-editor="true"]{min-height:40px !important;font-size:14px !important;line-height:22px !important;transition:none !important;}'), 'must disable lexical editor 100ms collapse transition');

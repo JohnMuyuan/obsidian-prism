@@ -275,8 +275,8 @@ if(!hit){
 const tag=(cur.tagName||'').toUpperCase();
 if(tag==='BUTTON'||(cur.getAttribute&&cur.getAttribute('role')==='button')){
 if(isDis(cur))return null;
-const tid=(cur.getAttribute&&cur.getAttribute('data-testid'))||'',cls=String((cur.getAttribute&&cur.getAttribute('class'))||cur.className||'');
-if(tid==='agent-input-box'||tid==='conversation-view'||/\b(surface-composer-card|monaco-editor|cm-editor|agy-home|ag-prism-thought-raw-toggle|ag-prism-thought-overlay)\b/.test(cls))return null;
+const tid=(cur.getAttribute&&cur.getAttribute('data-testid'))||'',cls=String((cur.getAttribute&&cur.getAttribute('class'))||cur.className||''),rl=(cur.getAttribute&&cur.getAttribute('role'))||'';
+if(rl==='tab'||rl==='menuitem'||rl==='option'||tid==='agent-input-box'||tid==='conversation-view'||/\b(surface-composer-card|monaco-editor|cm-editor|agy-home|ag-prism-thought-raw-toggle|ag-prism-thought-overlay|ag-prism-sb-|ag-prism-subbtn|ag-prism-ghost-btn|ag-prism-send-btn|ag-prism-menu-btn|ag-prism-model-opt|ag-prism-effort-pill|ag-cs-home-tab|ag-cs-home-range|ag-cs-subtab-btn|ces-cx-b|agy-overlay-item)\b/.test(cls))return null;
 if(cur.querySelector){
 let ed=false;
 try{ed=Boolean(cur.querySelector('textarea')||cur.querySelector('[contenteditable="true"]')||cur.querySelector('[role="textbox"]'));}
@@ -327,7 +327,7 @@ const btn=findPressBtn(e.target);
 if(btn){
 const tf=btn.style&&btn.style.transform?String(btn.style.transform).trim():'';
 const kf=tf&&tf!=='none'&&!/^scale\([^)]+\)$/.test(tf)?[{scale:'1'},{scale:'0.965'},{scale:'1'}]:[{transform:'scale(1)'},{transform:'scale(0.965)'},{transform:'scale(1)'}];
-spring(btn,kf,{stiffness:520,damping:30,mass:.72,reducedMotion:opts.reducedMotion,motionTier:opts.motionTier,slot:'btn-press'});
+spring(btn,kf,{durationMs:170,stiffness:560,damping:34,mass:.65,reducedMotion:opts.reducedMotion,motionTier:opts.motionTier,slot:'btn-press'});
 }
 };
 r.addEventListener('pointerover',onOver,{passive:true});

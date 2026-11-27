@@ -158,7 +158,7 @@
     out.ambientIntensity = pickOf(String(out.ambientIntensity ?? '100'), '0|35|70|100', '100');
     out.darkAura = pickOf(out.darkAura, 'subtle|balanced|vivid', 'balanced');
     for (const k of ['omniModule', 'effortMemory', 'periodicModelPicker']) out[k] = out[k] === 'off' || out[k] === false ? 'off' : 'on';
-    for (const [k, a, b] of [['lightPreset','alabaster','crystal'],['darkAuraStyle','neon','prism'],['thoughtTrigger','expand','preload'],['scrollBottomMotion','instant','smooth'],['thoughtView','bilingual','immersive'],['linkTarget','external','builtin'],['updateChannel','beta','stable']]) out[k] = out[k] === a ? a : b;
+    for (const [k, a, b] of [['lightPreset','alabaster','crystal'],['darkAuraStyle','neon','prism'],['effortPanelLayout','classic','codex'],['thoughtTrigger','expand','preload'],['scrollBottomMotion','instant','smooth'],['thoughtView','bilingual','immersive'],['linkTarget','external','builtin'],['updateChannel','beta','stable']]) out[k] = out[k] === a ? a : b;
     const migrateLegacyLang = (v) => {
       if (typeof v !== 'string') return '';
       const t = v.trim();
@@ -249,7 +249,7 @@
   let lastFormalConvEl = null;
   let lastFormalCascadeId = '';
   let lastStoreSnapKey = '';
-  const DIRTY_KEYS = 'f|t|r|s|a|c|b|o|l|tk|cf|g|m'.split('|');
+  const DIRTY_KEYS = 'f|t|r|s|a|c|b|o|l|tk|cf|g|m|p'.split('|');
   const dirtyFlags = {};
   const setAllDirty = (v) => { for (const k of DIRTY_KEYS) dirtyFlags[k] = v; };
   setAllDirty(true);
@@ -362,6 +362,7 @@
   const getMinFrameGapMs = () => ({ native: 0, 60: 15.2, 120: 7.5 })[getTargetFps()] ?? 4.8;
   const getTelemetryMode = () => pickOf(cfg.telemetryModule, 'on|off', 'auto');
   const getEffortSliderMode = () => pickOf(cfg.effortSliderModule, 'on|off', 'auto');
+  const getEffortPanelLayout = () => (cfg.effortPanelLayout === 'classic' ? 'classic' : 'codex');
   const onOffMode = (k) => (cfg[k] === 'off' || cfg[k] === false ? 'off' : 'on');
   const getEffortMemoryMode = () => onOffMode('effortMemory');
   const getPeriodicPickerMode = () => onOffMode('periodicModelPicker');
@@ -632,7 +633,7 @@
     }
     if (!msRig && mountFn && canMountRealCanvas(msRoot)) {
       try {
-        msRig = mountFn(msRoot, nextState);
+        msRig = mountFn(msRoot, { ...nextState, disableChroma: true });
         if (msRig) { msRig.__r = rigMod; msRig.__h = rigHash; }
       } catch {
         msRig = null;
@@ -1044,7 +1045,7 @@
     if (ctxMenu && !ownedCtxMenu) ownedCtxMenu = ctxMenu;
     const motionLv = getMotionLevel(), ctxEnabled = isContextMenuEnabled() && !destroyed, hiMode = getHostLocalizationMode(), curLang = getLang();
     const key = [
-      VERSION, curLang, motionLv, getTelemetryMode(), getEffortSliderMode(), getEffortMemoryMode(), hiMode,
+      VERSION, curLang, motionLv, getTelemetryMode(), getEffortSliderMode(), getEffortPanelLayout(), getEffortMemoryMode(), hiMode,
       getThoughtTranslateMode(), getThoughtTriggerTiming(), getThoughtView(), getOmniMode(), getLinkTarget(),
       +(cfg.sidebarStudio === 'on'), +ctxEnabled, meta?.baseUrl || '', sbMeta?.version || '', +!!sbMeta?.serviceReady,
       +!!tel, +!!eff, +!!hiInst, +!!th, +!!thUi, +!!omni, +!!sb, +!!ctxMenu,
@@ -1367,7 +1368,7 @@
     if (!ovs?.length) return;
     let touched = false;
     for (const ov of ovs) {
-      if (ha(ov, 'data-hover-card-popup') || tidOf(ov) === 'model-selector-panel' || (ga(ov, 'role') !== 'menu' && !clHas(ov, 'max-h-48'))) continue;
+      if (ha(ov, 'data-hover-card-popup') || ha(ov, 'data-ag-cs-model-overlay') || tidOf(ov) === 'model-selector-panel' || (ga(ov, 'role') !== 'menu' && !clHas(ov, 'max-h-48'))) continue;
       if (ga(ov, A_PB) !== '1' || ga(ov, A_PM) !== '1') touched = true;
       setAttrIfChanged(ov, A_PB, '1'); setAttrIfChanged(ov, A_PM, '1');
     }
@@ -1744,7 +1745,7 @@
       return;
     }
     if (!pulseBridgeInst) {
-      try { pulseBridgeInst = pulseVialBridgeMod.mountPulseVialBridge({ win: W, doc: D }); } catch { pulseBridgeInst = null; }
+      try { pulseBridgeInst = pulseVialBridgeMod.mountPulseVialBridge({ win: W, doc: D, defaultMode: 'bar', disableVial: true }); } catch { pulseBridgeInst = null; }
     } else if (forceSync && isFn(pulseBridgeInst.sync)) {
       try {
         void pulseBridgeInst.sync();
@@ -1771,7 +1772,7 @@
   };
 
   const OWN_PLUGIN_SELECTOR =
-    '.ag-cs-home-panel-seat, .ag-cs-ripple-host, .ag-cs-conv-aura-host, .ag-cs-crab, .ag-cs-prism-rim-cv, .ag-cs-model-glyph, [data-testid="orchestrator-effort-bar"], .ag-cs-thinking-spark, .ag-cs-smooth-caret, .ag-cs-liftoff-veil, .ag-cs-sidebar-glide-pill, .ag-cs-pill-glide, .ag-cs-stream-chunk, .ag-cs-thought-chunk, .ag-anim-icon, .ag-prism-omni-menu, .ag-prism-omni-pane, .ag-cs-ctx-menu, .ag-cs-ctx-toast, [data-ag-prism-omni-owned="1"], [data-ag-prism-sidebar-owned="1"], .ces-ag-section, .ces-set, #ag-codex-effort-slider-styles, #ag-pulse-status-bar, [data-ag-prism-pulse-bar], [data-ag-prism-fallback="1"], #context-card, #' +
+    '.ag-cs-home-panel-seat, .ag-cs-ripple-host, .ag-cs-conv-aura-host, .ag-cs-crab, .ag-cs-prism-rim-cv, .ag-cs-model-glyph, [data-testid="orchestrator-effort-bar"], .ag-cs-thinking-spark, .ag-cs-smooth-caret, .ag-cs-liftoff-veil, .ag-cs-sidebar-glide-pill, .ag-cs-pill-glide, .ag-cs-stream-chunk, .ag-cs-thought-chunk, .ag-anim-icon, .ag-prism-omni-menu, .ag-prism-omni-pane, .ag-cs-ctx-menu, .ag-cs-ctx-toast, [data-ag-prism-omni-owned="1"], [data-ag-prism-sidebar-owned="1"], .ces-ag-section, .ces-set, #ag-codex-effort-slider-styles, .ces-cx-list-head, #ag-pulse-status-bar, [data-ag-prism-pulse-bar], [data-ag-prism-fallback="1"], #context-card, #' +
     SETTINGS_SEC_ID +
     ', #ag-prism-css, #ag-prism-omni-css, #ag-prism-sidebar-studio-css, #ag-prism-periodic-picker-root, #ag-prism-periodic-picker-css, .ag-pp-hold-ring, .ag-pp-mini-keycap, #ag-claude-style-css, #ag-prism-motion-off-css, #ag-prism-host-alert-css, ' +
     EXT_ZH_UI_SEL;
@@ -2063,25 +2064,24 @@
         if (isAdded) touchedButtons = true;
       }
 
-      const isModelOrPulse =
-        tid === 'model-selector-panel' ||
+      const isModelPanel = tid === 'model-selector-panel' || ancMdl || q(MODEL_PANEL_SEL);
+      const isPulse =
         el.id === 'ag-pulse-status-bar' ||
         el.id === 'ag-prism-pulse-bar' ||
         ha(el, 'data-ag-prism-pulse-bar') ||
         ga(el, 'data-ag-prism-fallback') === '1' ||
         ga(el, 'data-ag-pulse-bar') === 'true' ||
         el.id === 'context-card' ||
-        ancMdl ||
-        q(MODEL_PANEL_SEL + ', #context-card');
+        q('#context-card');
 
       const isDialogRoot = role === 'dialog' || q('[role="dialog"]');
 
-      if (isModelOrPulse) {
+      if (isModelPanel) {
+        dirtyFlags.p = true;
+      } else if (isPulse) {
         dirtyFlags.c = true;
-        if (!ancMdl) {
-          dirtyFlags.o = true;
-          if (isAdded) touchedButtons = true;
-        }
+        dirtyFlags.o = true;
+        if (isAdded) touchedButtons = true;
       } else if (isDialogRoot || ancDlg) {
         chkDlg(isDialogRoot);
       } else if (tid === 'overview-panel' || cls.includes('agy-overlay') || q('[data-testid="overview-panel"]') || (q('.agy-overlay') && !q(HC_S))) {
@@ -2144,7 +2144,7 @@
       }
     }
 
-    if (!inPlainDialog && !inSbR) {
+    if (!inPlainDialog && !inSbR && !ancMdl && tid !== 'model-selector-panel' && !q(MODEL_PANEL_SEL)) {
       if (isAdded && (touchedButtons || isHostButtonCandidate(el) || q(HOST_BTN_QUERY))) {
         dirtyFlags.b = true;
         dirtyAddedRoots.add(el);
@@ -2172,7 +2172,7 @@
     const visibleChangedHeaders = !isAsyncConvEntry && (flags.f || flags.cf || flags.r) ? streamChoreoCtl.measureVisibleChangedHeaders() : [];
     const lensOverlays = (flags.f || flags.o) && isMotionStandardOrUltra() ? streamChoreoCtl.measureNewLensOverlays() : [];
     const caretList = !isAsyncConvEntry && (flags.f || flags.c) && cfg.smoothCaret !== false ? smoothCaretCtl.measureSnapshot(false, false) : null;
-    const modelPanelNow = isFullSync || flags.c || flags.o ? qs(D, MODEL_PANEL_SEL) : null;
+    const modelPanelNow = isFullSync || flags.c || flags.o || flags.p ? qs(D, MODEL_PANEL_SEL) : null;
     const modelOverlayChanged = !!(flags.o) && (!!modelPanelNow || hadModelPanelOpen);
     const cPlan = isFullSync || flags.c || modelOverlayChanged ? measureCrabClearanceAll() : null;
     if (flags.f || flags.r || flags.c || flags.t) convAuraCtl.prime?.();
@@ -2268,7 +2268,8 @@
     runGuardedMut(() => {
       applyRootAttrs(effectiveFull);
       if (actualRouteJump) {
-        for (const a of ['data-ag-cs-stage-glide', 'data-ag-cs-sonar', 'data-ag-cs-caustic']) {
+        const keepGlide = !measured.inHome && Boolean(measured.sidebarSnap);
+        for (const a of keepGlide ? ['data-ag-cs-sonar', 'data-ag-cs-caustic'] : ['data-ag-cs-stage-glide', 'data-ag-cs-glide-item', 'data-ag-cs-sonar', 'data-ag-cs-caustic']) {
           qa(D, `[${a}]`).forEach((el) => ra(el, a));
         }
       }
@@ -2311,14 +2312,15 @@
       }
       const modelPanelNow = measured.modelPanelNow;
       const modelOverlayChanged = measured.modelOverlayChanged;
-      if (effectiveFull || flags.c || flags.o) {
+      if (effectiveFull || flags.c || flags.o || flags.p) {
         hadModelPanelOpen = !!(modelPanelNow);
         syncModelMenuRootAttrs(modelPanelNow);
       }
       if (flags.f || flags.c || modelOverlayChanged) {
         syncComposers(measured, deferHeavyConvWork);
-      } else if (!deferHeavyConvWork && flags.tk) {
-        streamChoreoCtl.syncThinkingSparks(latestPrimaryModelInfo, latestPaneModelMap);
+      } else {
+        if (flags.p) modelGlyphCtl.syncModelSelectorPanel(latestPrimaryModelInfo);
+        if (!deferHeavyConvWork && flags.tk) streamChoreoCtl.syncThinkingSparks(latestPrimaryModelInfo, latestPaneModelMap);
       }
       if (flags.f || flags.r || flags.c) {
         streamChoreoCtl.syncHeroRouteChoreography(measured);
@@ -2372,7 +2374,7 @@
             smoothCaretCtl.queue(false, false, false);
             return true;
           },
-          140,
+          prevWasInHome && !measured.inHome && isMotionUltra() ? 350 : 185,
           () => {
             const convNow = verifyTargetConv();
             if (!convNow) return;
@@ -2434,7 +2436,7 @@
 
   function scheduleSync() {
     if (destroyed) return;
-    const highPri = !!(dirtyFlags.f || dirtyFlags.r || dirtyFlags.t || dirtyFlags.s || dirtyFlags.c || dirtyFlags.o || dirtyFlags.g);
+    const highPri = !!(dirtyFlags.f || dirtyFlags.r || dirtyFlags.t || dirtyFlags.s || dirtyFlags.c || dirtyFlags.o || dirtyFlags.g || dirtyFlags.p);
     if (syncQueued) {
       if (highPri && !syncIsRaf && !D.hidden && syncTimer) { CT(syncTimer); syncTimer = null; syncQueued = false; }
       else return;
@@ -2613,7 +2615,6 @@
       if (ev.key === '[' && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !isEditableTarget(ev.target) && !cl(ev.target, '[role="dialog"], .monaco-editor')) {
         const html = de(), k = 'data-ag-cs-sidebar-collapsed';
         if (!html || cfg.sidebarRestyle === false) return;
-        bumpResizingPulse();
         ga(html, k) === '1' ? ra(html, k) : sa(html, k, '1');
       }
     } catch {}
@@ -3032,6 +3033,9 @@
       applyRootAttrs(true);
       runSync(true);
       return true;
+    },
+    syncModelPanel() {
+      if (!destroyed) runGuardedMut(() => modelGlyphCtl.syncModelSelectorPanel(latestPrimaryModelInfo));
     },
     sync() {
       if (!destroyed) {

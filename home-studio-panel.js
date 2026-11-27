@@ -15,7 +15,7 @@
 
   const STUDIO_HEAD_CSS = '.ag-cs-home-panel-head{flex-wrap:wrap;row-gap:8px}';
   const STUDIO_MODEL_COLOR_CSS = 'html :is(.ag-cs-home-chart-seg,.ag-cs-home-model-swatch)[data-ag-mc]{background-color:var(--_mc-d);}html[data-ag-cs-theme="light"] :is(.ag-cs-home-chart-seg,.ag-cs-home-model-swatch)[data-ag-mc],html>body:is(.theme-light,.light-theme,.light) :is(.ag-cs-home-chart-seg,.ag-cs-home-model-swatch)[data-ag-mc]{background-color:var(--_mc-l);}';
-  const STUDIO_EXTRA_CSS = STUDIO_HEAD_CSS + '.ag-cs-home-tab,.ag-cs-home-range{white-space:nowrap}.ag-cs-home-ws-select{color-scheme:inherit}.ag-cs-home-ws-select option{background:var(--card,#141418);color:var(--foreground,#F2F2F5);}.agy-home{--_a:var(--ag-cs-accent);--_b:1px solid var(--_kb)}.ag-cs-hs-tg,.ag-cs-home-local-note{font-size:11px}.ag-cs-hs-tg{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border:var(--_b);border-radius:6px;background:var(--_tb);color:var(--foreground);font-family:inherit;font-weight:500;white-space:nowrap;cursor:pointer;&:hover{background:var(--ag-cs-hover-wash)}&[aria-pressed="true"]{color:var(--_a);border-color:color-mix(in srgb,currentColor 32%,#0000);background:color-mix(in srgb,currentColor 11%,#0000)}& svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}}:is(.ag-cs-home-ws-select,.ag-cs-hs-tg,.ag-cs-quota-refresh):focus-visible{outline:2px solid var(--_a);outline-offset:1px}.ag-cs-home-local-note{line-height:1.4;color:var(--muted-foreground);opacity:.86;padding-top:8px;border-top:var(--_b)}' + STUDIO_MODEL_COLOR_CSS;
+  const STUDIO_EXTRA_CSS = STUDIO_HEAD_CSS + '.ag-cs-home-tab,.ag-cs-home-range{white-space:nowrap}.ag-cs-home-body{display:flex;flex-direction:column;gap:12px}@keyframes ag-hs-in{from{opacity:0;transform:translate3d(0,4px,0)}to{opacity:1;transform:none}}@media (prefers-reduced-motion:no-preference){html:not([data-ag-cs-motion="off"]) .ag-cs-home-body[data-tab-anim="1"]{animation:ag-hs-in 145ms var(--ag-ease-out,cubic-bezier(.22,1,.36,1)) both}}.ag-cs-home-ws-select{color-scheme:inherit}.ag-cs-home-ws-select option{background:var(--card,#141418);color:var(--foreground,#F2F2F5);}.agy-home{--_a:var(--ag-cs-accent);--_b:1px solid var(--_kb)}.ag-cs-hs-tg,.ag-cs-home-local-note{font-size:11px}.ag-cs-hs-tg{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 8px;border:var(--_b);border-radius:6px;background:var(--_tb);color:var(--foreground);font-family:inherit;font-weight:500;white-space:nowrap;cursor:pointer;&:hover{background:var(--ag-cs-hover-wash)}&[aria-pressed="true"]{color:var(--_a);border-color:color-mix(in srgb,currentColor 32%,#0000);background:color-mix(in srgb,currentColor 11%,#0000)}& svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}}:is(.ag-cs-home-ws-select,.ag-cs-hs-tg,.ag-cs-quota-refresh):focus-visible{outline:2px solid var(--_a);outline-offset:1px}.ag-cs-home-local-note{line-height:1.4;color:var(--muted-foreground);opacity:.86;padding-top:8px;border-top:var(--_b)}' + STUDIO_MODEL_COLOR_CSS;
 
   // 高区分度双主题模型阵营子色板（每项为 [深色hex, 浅色hex]），避免同阵营模型落入近似蓝/重复索引
   const MODEL_CAMP_PALETTES = {
@@ -258,6 +258,8 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
     const scopePrefKey = 'ag-prism:homeSessionScope.v1';
     let detectedCurrentWorkspace = '';
     let lastPanelRenderKey = '';
+    let lastHeadKey = '';
+    let lastRenderedTab = '';
     let cachedAggKey = '';
     let curScope = 'local';
     const modelColours = usageCore?.createHomeModelColours ? usageCore.createHomeModelColours() : () => ({});
@@ -861,6 +863,8 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
 
       const d = getDoc();
       const ae = d?.activeElement;
+      const tabSwitched = Boolean(lastRenderedTab && lastRenderedTab !== activeTab);
+      lastRenderedTab = activeTab;
       let focusSel = '';
       if (ae && panel.contains?.(ae)) {
         for (const a of ['data-ag-scope-toggle', 'data-tab', 'data-range', 'data-ag-cs-ws-filter']) {
@@ -870,56 +874,105 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
       }
 
       runGuardedMut(() => {
-        panel.innerHTML = '';
-
-        const headLeft = dv(HC + 'head-left');
-        const tabs = dv(HC + 'tabs');
-        for (const [id, label] of [['overview', ui.tabOverview || 'Overview'], ['models', ui.tabModels || 'Models'], ['quotas', ui.tabQuotas || 'Quotas']]) {
-          ap(tabs, bt(HC + 'tab', label, () => {
-            activeTab = id;
-            if (id === 'quotas' && !hasUsableQuotas(liveQuotaSnap)) {
-              const now = Date.now();
-              if (!inCooldown(lastQuotaTabTriggerAt, 20000, now)) { lastQuotaTabTriggerAt = now; void refreshLiveTelemetrySnapshot(false, { quotaRefresh: true, ignoreFailCooldown: true }); }
-            }
-            renderHomePanel();
-          }, dAct('data-tab', id, activeTab === id)));
-        }
-        ap(headLeft, tabs);
-        const scopeLabel = formatScopeBadge(curScope);
-        if (scopeLabel) {
-          const badge = markNoTr(sp('ag-cs-home-scope-badge', scopeLabel, { 'data-ag-no-i18n': '', 'data-scope': curScope, 'data-scope-kind': curScope.startsWith('ssh:') ? 'ssh' : 'remote' }));
-          badge.title = scopeLabel;
-          ap(headLeft, badge);
-        }
-
         const [allLbl, actLbl, kA, kH, localTag, localNote] = 'homeScopeAll,homeScopeActive,homeScopeActiveCount,homeScopeArchivedCount,homeLocalOnlyTag,homeLocalScopeNote'.split(',').map((k, i) => ui[k] || fb[11 + i]);
-        const headRight = dv(HC + 'head-right');
-        if (!isQuotasTab) {
-          if (wsList.length > 0) {
-            const sel = mk('select', HC + 'ws-select', { 'data-ag-cs-ws-filter': '1', 'aria-label': ui.workspaceFilterAria || 'Workspace filter' });
-            const addOpt = (v, t) => { const o = mk('option', '', t); o.value = v; ap(sel, o); };
-            addOpt('all', ui.workspaceAll || 'All Projects');
-            for (const ws of wsList) addOpt(ws.id, `${detectedCurrentWorkspace && ws.id === detectedCurrentWorkspace ? '● ' : ''}${ws.id} (${fmtTok(ws.tokens)})`);
-            sel.value = activeWorkspace;
-            sel.addEventListener('change', () => { activeWorkspace = sel.value || 'all'; renderHomePanel(); });
-            ap(headRight, sel);
+        let headEl = panel.querySelector?.('.' + HC + 'panel-head') || null;
+        let bodyEl = panel.querySelector?.('.' + HC + 'body') || null;
+        const headLeftKey = `${curScope}|${lang}`;
+        const wsSig = wsList.map((w) => `${w.id}:${fmtTok(w.tokens)}`).join(',');
+        const headRightKey = isQuotasTab ? 'q' : `${lang}|${wsSig}|${activeWorkspace}|${detectedCurrentWorkspace}|${+skeleton}|${+hasArch}|${+includeArchived}|${activeRange}`;
+        const syncActiveBtns = (sel, attr, curVal) => {
+          for (const btn of headEl?.querySelectorAll?.(sel) || []) {
+            const on = btn.getAttribute?.(attr) === curVal;
+            if (on) btn.setAttribute?.('data-active', '1'); else btn.removeAttribute?.('data-active');
+            btn.setAttribute?.('aria-pressed', String(on));
           }
-          if (!skeleton && (hasArch || !includeArchived)) {
-            const tTip = `${allLbl} / ${actLbl}`;
-            const sv = isFn(d?.createElementNS) ? ap(mkSv(d, 'svg', ['viewBox', '0 0 24 24', 'aria-hidden', 'true', 'focusable', 'false']), mkSv(d, 'path', ['d', 'M7 10h14l-4-4m0 8H3l4 4'])) : null;
-            const tg = ap(bt('ag-cs-hs-tg', '', () => { includeArchived = !includeArchived; try { getLs()?.setItem(scopePrefKey, includeArchived ? 'all' : 'active'); } catch {} cachedAggKey = ''; renderHomePanel(true); }, { 'data-ag-scope-toggle': includeArchived ? 'all' : 'active', 'aria-pressed': String(!includeArchived), 'aria-label': tTip }), sv, sp('', includeArchived ? allLbl : actLbl));
-            tg.title = tTip;
-            ap(headRight, tg);
-          }
-          const ranges = dv(HC + 'ranges');
-          for (const r of usageCore.HOME_RANGES) {
-            ap(ranges, bt(HC + 'range', usageCore.homeRangeLabel?.(r, lang) || r.labelEn, () => { activeRange = r.id; renderHomePanel(); }, dAct('data-range', r.id, activeRange === r.id)));
-          }
-          ap(headRight, ranges);
-        }
-        ap(panel, ap(dv(HC + 'panel-head'), headLeft, headRight));
+        };
 
-        if (isQuotasTab) { renderQuotasView(panel, lang, ui); return; }
+        if (!headEl) {
+          const rim = panel.querySelector?.('.ag-cs-prism-rim-cv') || null;
+          panel.innerHTML = '';
+          if (rim) ap(panel, rim);
+          headEl = dv(HC + 'panel-head');
+          ap(panel, headEl);
+          lastHeadKey = '';
+        }
+
+        const prevHeadParts = lastHeadKey ? lastHeadKey.split('\0') : ['', ''];
+        let headLeft = headEl.querySelector?.('.' + HC + 'head-left') || null;
+        let headRight = headEl.querySelector?.('.' + HC + 'head-right') || null;
+        if (!headLeft || prevHeadParts[0] !== headLeftKey) {
+          if (!headLeft) { headLeft = dv(HC + 'head-left'); ap(headEl, headLeft); }
+          else headLeft.innerHTML = '';
+          const tabs = dv(HC + 'tabs');
+          for (const [id, label] of [['overview', ui.tabOverview || 'Overview'], ['models', ui.tabModels || 'Models'], ['quotas', ui.tabQuotas || 'Quotas']]) {
+            ap(tabs, bt(HC + 'tab', label, () => {
+              if (activeTab === id) return;
+              activeTab = id;
+              if (id === 'quotas' && !hasUsableQuotas(liveQuotaSnap)) {
+                const now = Date.now();
+                if (!inCooldown(lastQuotaTabTriggerAt, 20000, now)) { lastQuotaTabTriggerAt = now; void refreshLiveTelemetrySnapshot(false, { quotaRefresh: true, ignoreFailCooldown: true }); }
+              }
+              renderHomePanel();
+            }, dAct('data-tab', id, activeTab === id)));
+          }
+          ap(headLeft, tabs);
+          const scopeLabel = formatScopeBadge(curScope);
+          if (scopeLabel) {
+            const badge = markNoTr(sp('ag-cs-home-scope-badge', scopeLabel, { 'data-ag-no-i18n': '', 'data-scope': curScope, 'data-scope-kind': curScope.startsWith('ssh:') ? 'ssh' : 'remote' }));
+            badge.title = scopeLabel;
+            ap(headLeft, badge);
+          }
+        } else {
+          syncActiveBtns('.' + HC + 'tab', 'data-tab', activeTab);
+        }
+
+        if (!headRight || prevHeadParts[1] !== headRightKey) {
+          if (!headRight) { headRight = dv(HC + 'head-right'); ap(headEl, headRight); }
+          else headRight.innerHTML = '';
+          if (!isQuotasTab) {
+            if (wsList.length > 0) {
+              const sel = mk('select', HC + 'ws-select', { 'data-ag-cs-ws-filter': '1', 'aria-label': ui.workspaceFilterAria || 'Workspace filter' });
+              const addOpt = (v, t) => { const o = mk('option', '', t); o.value = v; ap(sel, o); };
+              addOpt('all', ui.workspaceAll || 'All Projects');
+              for (const ws of wsList) addOpt(ws.id, `${detectedCurrentWorkspace && ws.id === detectedCurrentWorkspace ? '● ' : ''}${ws.id} (${fmtTok(ws.tokens)})`);
+              sel.value = activeWorkspace;
+              sel.addEventListener('change', () => { activeWorkspace = sel.value || 'all'; renderHomePanel(); });
+              ap(headRight, sel);
+            }
+            if (!skeleton && (hasArch || !includeArchived)) {
+              const tTip = `${allLbl} / ${actLbl}`;
+              const sv = isFn(d?.createElementNS) ? ap(mkSv(d, 'svg', ['viewBox', '0 0 24 24', 'aria-hidden', 'true', 'focusable', 'false']), mkSv(d, 'path', ['d', 'M7 10h14l-4-4m0 8H3l4 4'])) : null;
+              const tg = ap(bt('ag-cs-hs-tg', '', () => { includeArchived = !includeArchived; try { getLs()?.setItem(scopePrefKey, includeArchived ? 'all' : 'active'); } catch {} cachedAggKey = ''; renderHomePanel(true); }, { 'data-ag-scope-toggle': includeArchived ? 'all' : 'active', 'aria-pressed': String(!includeArchived), 'aria-label': tTip }), sv, sp('', includeArchived ? allLbl : actLbl));
+              tg.title = tTip;
+              ap(headRight, tg);
+            }
+            const ranges = dv(HC + 'ranges');
+            for (const r of usageCore.HOME_RANGES) {
+              ap(ranges, bt(HC + 'range', usageCore.homeRangeLabel?.(r, lang) || r.labelEn, () => { activeRange = r.id; renderHomePanel(); }, dAct('data-range', r.id, activeRange === r.id)));
+            }
+            ap(headRight, ranges);
+          }
+        } else if (!isQuotasTab) {
+          syncActiveBtns('.' + HC + 'range', 'data-range', activeRange);
+        }
+        lastHeadKey = `${headLeftKey}\0${headRightKey}`;
+
+        if (bodyEl) {
+          if (isFn(bodyEl.remove)) bodyEl.remove();
+          else if (isFn(bodyEl.parentNode?.removeChild)) bodyEl.parentNode.removeChild(bodyEl);
+          else if (isFn(panel.removeChild)) panel.removeChild(bodyEl);
+          else { bodyEl.innerHTML = ''; }
+        }
+        if (!bodyEl || !bodyEl.parentNode) {
+          bodyEl = dv(HC + 'body', tabSwitched ? { 'data-tab-anim': '1' } : null);
+          ap(panel, bodyEl);
+        } else if (tabSwitched) {
+          bodyEl.setAttribute?.('data-tab-anim', '1');
+        } else {
+          bodyEl.removeAttribute?.('data-tab-anim');
+        }
+
+        if (isQuotasTab) { renderQuotasView(bodyEl, lang, ui); return; }
 
         const makeLocalNote = () => dv(HC + 'local-note', localNote, { 'data-local-scope-note': '1' });
         const ac = fmtCnt(toNum(data.activeSessions));
@@ -952,7 +1005,7 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
             if (sEl) sEl.title = tt;
             ap(stats, ap(cell, sp(stC + '-label', lb), val, sEl));
           }
-          ap(panel, stats);
+          ap(bodyEl, stats);
 
           const heat = dv(HC + 'heat', { ...(skeleton ? { 'data-skeleton': '' } : {}), 'data-local-only': '1', 'aria-label': localNote });
           const fmt = usageCore.homeShortDateFormat(lang);
@@ -967,11 +1020,11 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
           ap(heat, heatTipEl);
           heat.addEventListener('mouseover', (ev) => { const t = ev.target?.closest?.('.' + HC + 'heat-cell'); if (t) showHeatTip(t, heat); });
           heat.addEventListener('mouseleave', hideHeatTip);
-          ap(panel, heat, data.funBook ? sp(HC + 'fun', data.funBook) : null, makeLocalNote());
+          ap(bodyEl, heat, data.funBook ? sp(HC + 'fun', data.funBook) : null, makeLocalNote());
         } else {
           const models = data.models || [];
           const emptyMsg = ui.noModelUsage || 'No model usage data yet';
-          if (models.length === 0) { ap(panel, dv(HC + 'models-empty', !includeArchived && arch > 0 ? `${emptyMsg} (${kH} ${ar})` : emptyMsg), makeLocalNote()); return; }
+          if (models.length === 0) { ap(bodyEl, dv(HC + 'models-empty', !includeArchived && arch > 0 ? `${emptyMsg} (${kH} ${ar})` : emptyMsg), makeLocalNote()); return; }
           const ids = models.map((m) => m.id);
           const columns = data.modelDays || [];
           const fmt = usageCore.homeShortDateFormat(lang);
@@ -1036,7 +1089,7 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
               }
             }
             const axis = dv(cC + 'axis');
-            ap(panel, ap(dv(HC + 'chart'), plot, axis));
+            ap(bodyEl, ap(dv(HC + 'chart'), plot, axis));
             G.requestAnimationFrame?.(() => {
               if (isDestroyed() || !axis.isConnected) return;
               const labels = columns.map((c) => usageCore.homeShortDate(fmt, c.date));
@@ -1068,10 +1121,10 @@ de|Subagenten|Token||Ein|Aus|Wenig Kontingent|Wird knapp|Reichlich|Was steht als
             const hc = models.length - shown.length;
             ap(listEl, bt(mC + 's-more', modelsExpanded ? ui.showLess || 'Show less' : isFn(ui.showMoreN) ? ui.showMoreN(hc) : `Show ${hc} more`, () => { modelsExpanded = !modelsExpanded; renderHomePanel(); }));
           }
-          ap(panel, listEl, makeLocalNote());
+          ap(bodyEl, listEl, makeLocalNote());
         }
       });
-      if (focusSel) try { panel.querySelector?.(focusSel)?.focus?.(); } catch {}
+      if (focusSel && d?.activeElement !== panel.querySelector?.(focusSel)) try { panel.querySelector?.(focusSel)?.focus?.(); } catch {}
     };
 
     const dispose = () => {

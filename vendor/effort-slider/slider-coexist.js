@@ -68,14 +68,16 @@
     const fn = resLib(doc?.defaultView)?.markNoTranslate;
     if (!fn) return;
     for (const el of qa(doc, '.ces-ag-section,.ces-set,[data-testid="orchestrator-effort-bar"]')) {
+      if (el.__agNoTr && ga(el, 'data-ag-i18n-skip') === '1') continue;
       fn(el);
       for (const ch of qa(el, 'div,span')) if (String(ch.className || '').includes('ces-ag-effort-')) fn(ch);
+      el.__agNoTr = 1;
     }
   }
 
   function syncBilingualDom(doc) {
     const p = qs(doc, '[data-testid="model-selector-panel"]');
-    if (!p) return;
+    if (!p || ga(p, 'data-ces-view') === 'effort') return;
     for (const g of qa(p, '[data-testid="model-selector-effort-group"]')) {
       if (!ga(g, 'data-model-base')) {
         const pr = parseLocalizedModelLabel(g.textContent);
@@ -223,7 +225,7 @@
   function createEffortSliderController(envOpts) {
     const gW = () => (envOpts && envOpts.window) || (typeof window !== 'undefined' ? window : globalRoot);
     const gD = () => (envOpts && envOpts.document) || gW()?.document || null;
-    let mode = 'auto', rememberEffort = true, inst = null, memGuard = null, yielded = false;
+    let mode = 'auto', rememberEffort = true, panelLayout = 'codex', inst = null, memGuard = null, yielded = false;
     const perfStats = { rawMutations: 0, executedScans: 0, skippedIrrelevant: 0 };
 
     function hasExtInst() {
@@ -235,7 +237,7 @@
     }
 
     const HIDE_CSS_TEXT =
-      '.ces-ag-section,.ces-menu-section,[data-ces-effort-row="true"],.ces-set,.ces-settings-panel{display:none!important}' +
+      '.ces-ag-section,.ces-menu-section,[data-ces-effort-row="true"],.ces-set,.ces-settings-panel,.ces-cx-list-head{display:none!important}' +
       '[data-testid="orchestrator-effort-bar"]{display:none!important}' +
       '[data-ces-part="trigger-effort"]{color:inherit!important;opacity:.7!important;font-weight:inherit!important}';
 
@@ -246,7 +248,8 @@
         ra(sp, 'data-ces-part');
       }
       for (const p of qa(doc, '.ces-ag-panel-enhanced')) p.classList?.remove?.('ces-ag-panel-enhanced');
-      for (const attr of ['data-ces-model-selected', 'data-ag-cs-model-submenu', 'data-ag-cs-orch-l2', 'data-ag-cs-orch-l3', 'data-ces-orch-row', 'data-ces-orch-b', 'data-ces-orch-tunable']) {
+      for (const cx of qa(doc, '.ces-cx-list-head,.ag-cs-orch-head .ces-cx-m')) cx.remove?.();
+      for (const attr of ['data-ces-model-selected', 'data-ces-has-chk', 'data-ces-layout', 'data-ces-view', 'data-ces-ov', 'data-ag-cs-model-submenu', 'data-ag-cs-orch-l2', 'data-ag-cs-orch-l3', 'data-ces-orch-row', 'data-ces-orch-b', 'data-ces-orch-tunable']) {
         for (const it of qa(doc, `[${attr}]`)) ra(it, attr);
       }
       ra(doc.documentElement, 'data-ces-slider-ready');
@@ -311,6 +314,7 @@
         MutationObserver: mkThrottledMO(getMO(w), d, perfStats) || undefined,
         skipGenericMenuObserver: true,
         rememberEffort,
+        panelLayout,
       });
       if (!next) return false;
       next.__prismOwned = true;
@@ -328,6 +332,7 @@
       const raw = cfg && cfg.effortSliderModule;
       mode = raw === 'on' || raw === 'off' ? raw : 'auto';
       rememberEffort = !(cfg && (cfg.effortMemory === 'off' || cfg.effortMemory === false));
+      panelLayout = cfg && cfg.effortPanelLayout === 'classic' ? 'classic' : 'codex';
       if (mode === 'off') {
         yielded = false;
         stopInst();
@@ -357,6 +362,7 @@
         mountBuiltIn();
       } else {
         try { inst.setRememberEffort?.(rememberEffort); } catch {}
+        try { inst.setPanelLayout?.(panelLayout); } catch {}
         try { inst.rescan?.(); } catch {}
       }
       markOwnedNoTr(gD());
@@ -374,6 +380,7 @@
       return {
         mode,
         rememberEffort,
+        panelLayout,
         mountedPrism: !!inst,
         memoryGuardActive: !!memGuard,
         yieldedToExternal: !!(yielded || (mode === 'auto' && hasExtInst())),

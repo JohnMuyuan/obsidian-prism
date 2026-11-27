@@ -40,6 +40,7 @@ const DEFAULT_CONFIG = {
   targetFps: '180',
   telemetryModule: 'auto',
   effortSliderModule: 'auto',
+  effortPanelLayout: 'codex',
   effortMemory: 'on',
   periodicModelPicker: 'on',
   thoughtTranslate: 'off',
@@ -76,6 +77,7 @@ const DEFAULT_CONFIG = {
   autoUpdate: 'off',
   updateChannel: 'stable',
   autoArchiveOnExit: false,
+  inlineDiff: 'on',
   pollIntervalMs: 2500,
 };
 
@@ -89,6 +91,7 @@ const VALIDATORS = {
   targetFps: ['60', '120', '180', 'native'],
   telemetryModule: ['auto', 'on', 'off'],
   effortSliderModule: ['auto', 'on', 'off'],
+  effortPanelLayout: ['codex', 'classic'],
   effortMemory: ['on', 'off'],
   periodicModelPicker: ['on', 'off'],
   thoughtTranslate: ['off', 'machine', 'ai'],
@@ -125,6 +128,7 @@ const VALIDATORS = {
   autoUpdate: ['on', 'off'],
   updateChannel: ['stable', 'beta'],
   autoArchiveOnExit: 'boolean',
+  inlineDiff: ['on', 'off'],
 };
 
 function normalizeMascotConfigValue(raw) {
@@ -5508,7 +5512,7 @@ function mangleSafeLocals(tokens) {
       continue;
     }
     if (JS_KEYWORDS.has(name)) {
-      if (name !== 'in' && name !== 'of' && name !== 'typeof' && name !== 'void' && name !== 'new' && name !== 'await' && name !== 'extends') {
+      if (name !== 'in' && name !== 'of' && name !== 'typeof' && name !== 'void' && name !== 'new' && name !== 'await' && name !== 'extends' && name !== 'null' && name !== 'true' && name !== 'false' && name !== 'this' && name !== 'instanceof' && name !== 'delete') {
         declDepths.delete(bStack.length);
         pendingBraceKind = '';
       }
@@ -7394,11 +7398,12 @@ function stripJsFunctionsByName(src, replacementsByName) {
 
 function stripUnusedUpstreamMenuObserver(src) {
   const preCleaned = src
-    .replace(/\bvar\s+(?:SET_TITLE_I18N|SET_HEAD_I18N|FILL_RADIUS_CSS|TRACK_HEIGHT|BASE_SPEEDUP|MIN_HEIGHT_SLOTS|CLAUDE_ROWS|CLAUDE_KNOB_[WHR]|TRACE_CAPACITY|traceRingBuffer)\s*=\s*(?:\{[^{}]*\}|[^;\n]+);?/g, '')
+    .replace(/\bvar\s+(?:SET_TITLE_I18N|SET_HEAD_I18N|EFFORT_TITLE_I18N|INFERENCE_LABELS|FILL_RADIUS_CSS|TRACK_HEIGHT|BASE_SPEEDUP|MIN_HEIGHT_SLOTS|CLAUDE_ROWS|CLAUDE_KNOB_[WHR]|TRACE_CAPACITY|traceRingBuffer|_tr|SETTINGS_VERSION)\s*=\s*(?:\{[^{}]*\}|\[[^\[\]]*\]|[^;\n]+);?/g, '')
     .replace(/\bvar\s+SETTINGS_SCHEMA\s*=\s*_F\(\[[\s\S]*?(?=\r?\nfunction\s+schemaDefaults\b)/, '')
     .replace(/,\s*(?:label|hint|labelEn|hintEn)\s*:\s*"[^"]*"/g, '')
     .replace(/(?<!function\s)\btracePush\([^\n;]*\);?/g, '')
     .replace(/if\s*\(\s*typeof\s+window\s*!==\s*"undefined"\s*&&[\s\S]*?(?=\nreturn\s*\{)/, '')
+    .replace(/\nreturn\s*\{mountCodexEffortSlider,[^\n]+\};/, '\nreturn {mountCodexEffortSlider,installAntigravityObserver,installEffortMemoryGuard,installCodexEffortSlider,findAntigravityTrigger,markNoTranslate};')
     .replace(/(var\s+SLIDER_CSS\s*=\s*)("(?:\\.|[^"\\])*")/, (full, p1, lit) => {
       try {
         const rawCss = JSON.parse(lit);
@@ -7411,13 +7416,19 @@ function stripUnusedUpstreamMenuObserver(src) {
   return stripJsFunctionsByName(preCleaned, {
     schemaDefaults: 'function schemaDefaults(){return{v:1,motion:"fast",ticks:"highlight"};}',
     normalizeSettings: 'function normalizeSettings(r){var b={v:1,motion:"fast",ticks:"highlight"};if(!r||typeof r!=="object")return b;if(r.motion==="fast"||r.motion==="quick"||r.motion==="full")b.motion=r.motion;else if(!r.motion&&r.reducedMotion===true)b.motion="quick";if(r.ticks==="highlight"||r.ticks==="dim"||r.ticks==="hidden")b.ticks=r.ticks;return b;}',
-    installMenuObserver: 'function installMenuObserver(){return{stop:function(){},rescan:function(){},getCurrent:function(){return null;}};}',
-    openSettingsPanel: 'function openSettingsPanel(){return function(){};}',
-    installSettingsUi: 'function installSettingsUi(){return{stop:function(){}};}',
+    installMenuObserver: '',
+    openSettingsPanel: '',
+    installSettingsUi: '',
+    installCodexEffortSlider: 'function installCodexEffortSlider(o){o=o||{};var d=o.document||(typeof document!=="undefined"?document:null),w=o.window||d?.defaultView||(typeof window!=="undefined"?window:globalRoot);if(!d?.body)return null;try{w?.__agCodexEffortSliderInstance?.stop?.();}catch{}installStyles(d);var s=(e)=>{if(!e||e.key===SETTINGS_KEY||e.key===LEGACY_SETTINGS_KEY)_invCfg();};w?.addEventListener?.("storage",s);w?.addEventListener?.(SETTINGS_EVENT,s);var a=installAntigravityObserver({document:d,window:w,MutationObserver:o.MutationObserver,rememberEffort:o.rememberEffort,panelLayout:o.panelLayout}),i={stop:()=>{a.stop();w?.removeEventListener?.("storage",s);w?.removeEventListener?.(SETTINGS_EVENT,s);_invCfg();if(w?.__agCodexEffortSliderInstance===i)delete w.__agCodexEffortSliderInstance;},rescan:a.rescan,setRememberEffort:a.setRememberEffort,setPanelLayout:a.setPanelLayout};if(w)w.__agCodexEffortSliderInstance=i;return i;}',
+    resolveEffortTitle: 'function resolveEffortTitle(d,w){var l=_normSliderLang(getPrismRootAttr(d,w,"data-ag-cs-lang"),w);try{var u=(w?.__agCsLocales||globalRoot?.__agCsLocales)?.getUiStrings?.(l);if(u?.effortTitle)return String(u.effortTitle);}catch{}return"Reasoning Effort";}',
     findInferenceRow: '',
+    findValueElement: 'function findValueElement(r){return r&&r.querySelector&&r.querySelector(".ces-ag-effort-value")||null;}',
+    syncTriggerColor: 'function syncTriggerColor(d,l,i,c,m,h,cl,tr,gm){d=d||(typeof document!=="undefined"?document:null);if(!d)return;var ag=tr||findAntigravityTrigger(d),tx=ag?ag.textContent:"",ic=typeof cl==="boolean"?cl:isClaudeModel(tx),ig=typeof gm==="boolean"?gm:(!ic&&isGeminiModel(tx)),col=valueColorFor(l,i,c,m,h,ic,resolvePrismAccentTone(d,null),ig)||"",sp=ag&&ag.querySelector("span.opacity-70,[data-ces-part=\'trigger-effort\']");if(sp){sp.setAttribute("data-ces-part","trigger-effort");sp.style.color=col;sp.style.opacity=col?"1":"";sp.style.fontWeight=col?"600":"";}}',
+    _normSliderLang: 'function _normSliderLang(r,w){var v=String(r||"").trim();if(!v||v.toLowerCase()==="auto"){var x=_win(w),n=x&&"navigator"in x?x.navigator:(typeof navigator!=="undefined"?navigator:null);v=String(n?.language||"").trim();}return globalRoot?.__agCsI18nCore?.normalizeLanguage?.(v,"en")||"en";}',
+    _isZhLang: '',
     traceClear: '',
-    tracePush: 'function tracePush(){}',
-    findSeatEffort: 'function findSeatEffort(){return null;}',
+    tracePush: '',
+    findSeatEffort: '',
     starCountFor: '',
     resetSettings: '',
     writeSettings: '',
@@ -12410,6 +12421,10 @@ const REMOVE_EXPRESSION = `(() => {
     'data-ag-cs-orch-l3',
     'data-ces-orch-row',
     'data-ces-model-selected',
+    'data-ces-has-chk',
+    'data-ces-layout',
+    'data-ces-view',
+    'data-ces-ov',
     'data-ag-cs-row-running',
     'data-ag-row-stagger',
     'data-ces-orch-b',
@@ -12512,7 +12527,7 @@ const REMOVE_EXPRESSION = `(() => {
   const nodes = document.querySelectorAll(
     '#' + ${JSON.stringify(STYLE_ID)} +
     ', #' + ${JSON.stringify(LEGACY_STYLE_ID)} +
-    ', #ag-prism-host-alert-css, #ag-prism-settings-v101-css, #ag-prism-studio-v101-css, #ag-prism-omni-css, #ag-prism-sidebar-studio-css, #ag-prism-periodic-picker-css, #ag-prism-periodic-picker-root, .ag-pp-hold-ring, .ag-pp-mini-keycap, #ag-prism-inline-diff-css, #ag-prism-wallpaper-root, #ag-prism-wallpaper-css, #ag-prism-suggester-css, #ag-prism-model-dd-css, [data-testid="prism-suggest-trigger"], [data-testid="prism-ghost-overlay"], #ag-prism-storage-guard, #ag-prism-storage-guard-css, #ag-cs-settings-sec, [data-testid="prism-thought-ai-config"], [data-testid="prism-thought-general-config"], .ag-omni-dock, .ag-omni-menu, .ag-prism-omni-menu, .ag-prism-omni-pane, [data-ag-prism-omni-owned="1"], [data-ag-prism-sidebar-owned="1"], .ag-prism-sidebar-studio, .ag-prism-sidebar-rail, .ag-prism-sidebar-popover, .ag-prism-sidebar-modal, .ag-cs-home-panel, .ag-cs-home-panel-seat, .ag-cs-ripple-layer, .ag-cs-ripple-host, .ag-cs-conv-aura-host, .ag-cs-crab, .ag-cs-dual-stage, .ag-cs-crab-stage, .ag-cs-mascot-stage, .ag-cs-mascot, .ag-v2-mascot-stage, .ag-v2-habitat-prop, .ag-cs-crystal-bar, [data-testid="orchestrator-effort-bar"], .ag-cs-prism-rim-cv, .ag-cs-code-fold-btn, .ag-cs-nav-outline-popover, .ag-cs-nav-outline-trigger, .ag-cs-smooth-caret, .ag-cs-perf-backdrop, .ag-cs-ctx-menu, .ag-cs-ctx-toast'
+    ', #ag-prism-host-alert-css, #ag-prism-settings-v101-css, #ag-prism-studio-v101-css, #ag-prism-omni-css, #ag-prism-sidebar-studio-css, #ag-prism-periodic-picker-css, #ag-prism-periodic-picker-root, .ag-pp-hold-ring, .ag-pp-mini-keycap, #ag-prism-inline-diff-css, #ag-prism-wallpaper-root, #ag-prism-wallpaper-css, #ag-prism-suggester-css, #ag-prism-model-dd-css, [data-testid="prism-suggest-trigger"], [data-testid="prism-ghost-overlay"], #ag-prism-storage-guard, #ag-prism-storage-guard-css, #ag-cs-settings-sec, [data-testid="prism-thought-ai-config"], [data-testid="prism-thought-general-config"], .ag-omni-dock, .ag-omni-menu, .ag-prism-omni-menu, .ag-prism-omni-pane, [data-ag-prism-omni-owned="1"], [data-ag-prism-sidebar-owned="1"], .ag-prism-sidebar-studio, .ag-prism-sidebar-rail, .ag-prism-sidebar-popover, .ag-prism-sidebar-modal, .ag-cs-home-panel, .ag-cs-home-panel-seat, .ag-cs-ripple-layer, .ag-cs-ripple-host, .ag-cs-conv-aura-host, .ag-cs-crab, .ag-cs-dual-stage, .ag-cs-crab-stage, .ag-cs-mascot-stage, .ag-cs-mascot, .ag-v2-mascot-stage, .ag-v2-habitat-prop, .ag-cs-crystal-bar, [data-testid="orchestrator-effort-bar"], .ces-cx-list-head, .ag-cs-prism-rim-cv, .ag-cs-code-fold-btn, .ag-cs-nav-outline-popover, .ag-cs-nav-outline-trigger, .ag-cs-smooth-caret, .ag-cs-perf-backdrop, .ag-cs-ctx-menu, .ag-cs-ctx-toast'
   );
   nodes.forEach((n) => n.remove());
   return { removed: nodes.length };

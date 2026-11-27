@@ -67,6 +67,7 @@
   const A_MRW = 'data-op-manual-raw';
   const A_BIL = 'data-op-bilingual';
   const A_PNL = 'data-op-thought-panel';
+  const A_PRP = 'data-op-prose-panel';
   const C_OV = 'ag-prism-thought-overlay';
   const C_BD = 'ag-prism-thought-body';
   const C_FB = 'ag-prism-thought-fallback-badge';
@@ -563,6 +564,7 @@
 
   function isPanelCurrentlyExpanded(panel) {
     if (!panel) return false;
+    if (ga(panel, A_PRP) === '1') return true;
     if (ga(panel.previousElementSibling, A_EXP) === 'true') return true;
     const triggers = queryTriggers();
     for (let i = 0; i < triggers.length; i++) {
@@ -1155,6 +1157,7 @@
       if (rec.tn) toolSummaryNodeMap.delete(rec.tn);
       toolSummaryRecords.delete(rec);
     }
+    qsa(`[${A_PRP}="1"]`).forEach((p) => cleanSinglePanelAttributes(p));
   }
 
   function setTranslateToolSummariesFlag(enabled, triggerRescan = true) {
@@ -1372,7 +1375,7 @@
     });
   }
 
-  const PANEL_CLEAN_ATTRS = [A_RDY, A_PND, A_FLD, A_FBK, A_SIG, A_SRW, A_MRW, A_BIL, A_PNL];
+  const PANEL_CLEAN_ATTRS = [A_RDY, A_PND, A_FLD, A_FBK, A_SIG, A_SRW, A_MRW, A_BIL, A_PNL, A_PRP];
 
   function cleanOverlayKeepRaw(panel) {
     if (!panel) return;
@@ -1423,6 +1426,7 @@
       clearTriggerStatusBadge(btn);
       cleanSinglePanelAttributes(nextSib(btn));
     });
+    qsa(`[${A_PRP}="1"]`).forEach((p) => cleanSinglePanelAttributes(p));
     qsa(`.${C_TRG}, [data-testid="prism-thought-general-config"]`).forEach((n) => n.remove());
     const rootEl = docRoot();
     ra(rootEl, 'data-ag-prism-thought-owner');
@@ -1579,7 +1583,7 @@
     }
   }
 
-  function collectCleanText(node, chunks, fm) {
+  function collectCleanText(node, chunks, fm, preserveCode = false) {
     if (!node) return;
     const nt = node.nodeType;
     if (nt === 3) {
@@ -1595,24 +1599,32 @@
       return;
     }
     if (fm) registerFileNodeInMap(node, fm);
+    if (preserveCode && tag === 'CODE') {
+      const codeStr = String(tc(node) || '').trim();
+      if (codeStr && !codeStr.includes('`') && !codeStr.includes('\n')) {
+        chunks.push('`' + codeStr + '`');
+        return;
+      }
+    }
     const isBlock = BLOCK_TAGS.has(tag);
     if (isBlock) chunks.push('\n');
     const chs = node[K_CN];
     if (chs && chs.length) {
-      for (let i = 0; i < chs.length; i++) collectCleanText(chs[i], chunks, fm);
+      for (let i = 0; i < chs.length; i++) collectCleanText(chs[i], chunks, fm, preserveCode);
     } else if (typeof tc(node) === 'string' && (!node.children || !node.children.length)) {
       chunks.push(tc(node));
     }
     if (isBlock) chunks.push('\n');
   }
 
-  function extractPanelInfo(panel) {
+  function extractPanelInfo(panel, forcePreserveCode = false) {
     const chs = panel && panel[K_CN];
     if (!chs) return { s: '', t: '', k: '', z: true };
+    const preserveCode = Boolean(forcePreserveCode || ga(panel, A_PRP) === '1');
     const activeLang = resolveActiveLang();
     const stp = quickPanelStamp(panel);
     const hit = rawCacheMap.get(panel);
-    if (hit && hit.s === stp && panelFileMaps.has(panel)) {
+    if (hit && hit.s === stp && hit.pc === preserveCode && panelFileMaps.has(panel)) {
       if (hit.l !== activeLang) {
         hit.z = isAlreadyTargetLang(hit.t, activeLang);
         hit.l = activeLang;
@@ -1621,10 +1633,10 @@
     }
     const chunks = [];
     const fm = createEmptyFileMap();
-    for (let i = 0; i < chs.length; i++) collectCleanText(chs[i], chunks, fm);
+    for (let i = 0; i < chs.length; i++) collectCleanText(chs[i], chunks, fm, preserveCode);
     panelFileMaps.set(panel, fm);
     const rt = normalizeTextKey(chunks.join(''));
-    const rec = { s: stp, t: rt, k: computeSkelBody(rt), z: isAlreadyTargetLang(rt, activeLang), l: activeLang };
+    const rec = { s: stp, t: rt, k: computeSkelBody(rt), z: isAlreadyTargetLang(rt, activeLang), l: activeLang, pc: preserveCode };
     rawCacheMap.set(panel, rec);
     return rec;
   }
@@ -3201,7 +3213,14 @@
     const tag = el.tagName ? String(el.tagName).toUpperCase() : '';
     if (TOOL_SKIP_TAGS.has(tag)) return true;
     const tid = ga(el, 'data-testid') || '';
-    if (tid === 'thinking-collapsible-trigger' || tid === 'prism-thought-ai-config' || tid === 'prism-thought-general-config') return true;
+    if (
+      tid === 'thinking-collapsible-trigger' ||
+      tid === 'tool-group-elapsed' ||
+      tid === 'prism-thought-ai-config' ||
+      tid === 'prism-thought-general-config'
+    ) return true;
+    const cls = String(ga(el, 'class') || el.className || '');
+    if (/\bsr-only\b/.test(cls)) return true;
     if (hasAttr(el, 'data-file-href') || hasAttr(el, 'data-file-path') || hasAttr(el, 'data-omni-path')) return true;
     return false;
   }
@@ -3282,6 +3301,7 @@
   function scanToolSummaryContainers() {
     pruneDetachedToolSummaryRecords();
     if (!translateToolSummaries || currentMode === 'off' || typeof document === 'undefined') return;
+    scanAssistantProseBlocks();
     const br = getBridge();
     if (!br || typeof br.translateStream !== 'function') return;
 
@@ -3297,7 +3317,10 @@
     const seenContainer = new Set();
     const pushContainer = (c) => {
       if (!c || seenContainer.has(c) || !isConn(c) || isHiddenByAncestor(null, c)) return;
-      if (probeViewportBand(c) === 0) return;
+      if (probeViewportBand(c) === 0) {
+        hasOffscreenLazyPanels = true;
+        return;
+      }
       seenContainer.add(c);
       containers.push(c);
     };
@@ -3305,11 +3328,56 @@
     const groupTrigs = scope.querySelectorAll ? scope.querySelectorAll(SEL_TOOL_TRIGGERS) : [];
     for (let i = 0; i < groupTrigs.length; i++) {
       const trig = groupTrigs[i];
-      if (!trig || ga(trig, A_EXP) !== 'true') continue;
+      if (!trig) continue;
+      if (ga(trig, 'data-testid') === 'tool-group-collapsible') {
+        const probeList = [];
+        collectToolSummaryTextNodes(trig, probeList, new Set(), thoughtPanelSet);
+        if (probeList.length > 0) pushContainer(trig);
+      }
+      if (ga(trig, A_EXP) !== 'true') continue;
       const bodyDiv = nextSib(trig);
       if (bodyDiv && String(bodyDiv.tagName || '').toUpperCase() === 'DIV') {
         pushContainer(bodyDiv);
       }
+    }
+
+    const stepPlanItems = scope.querySelectorAll ? scope.querySelectorAll('[data-testid="step-plan-item"]') : [];
+    if (stepPlanItems && stepPlanItems.length) {
+      const stepRows = [];
+      for (let i = 0; i < stepPlanItems.length; i++) {
+        const sp = stepPlanItems[i];
+        if (!sp || isHiddenByAncestor(null, sp)) continue;
+        if (probeViewportBand(sp) > 0) stepRows.push(sp);
+        else hasOffscreenLazyPanels = true;
+      }
+      if (stepRows.length) containers.push({ __rows: stepRows });
+    }
+
+    const agentResps = scope.querySelectorAll ? scope.querySelectorAll('[data-testid="agent-response"]') : [];
+    if (agentResps && agentResps.length) {
+      const orphanCmdRows = [];
+      for (let ri = 0; ri < agentResps.length; ri++) {
+        const resp = agentResps[ri];
+        const btns = resp && resp.querySelectorAll ? resp.querySelectorAll('button') : [];
+        for (let i = 0; i < btns.length; i++) {
+          const b = btns[i];
+          if (!b || hasAttr(b, 'data-testid')) continue;
+          let insideKnown = false;
+          let cur = parEl(b);
+          while (cur && cur !== resp) {
+            if (seenContainer.has(cur) || thoughtPanelSet.has(cur) || hasAttr(cur, 'data-markdown-root')) {
+              insideKnown = true;
+              break;
+            }
+            cur = parEl(cur);
+          }
+          if (!insideKnown && !isHiddenByAncestor(null, b)) {
+            if (probeViewportBand(b) > 0) orphanCmdRows.push(b);
+            else hasOffscreenLazyPanels = true;
+          }
+        }
+      }
+      if (orphanCmdRows.length) containers.push({ __rows: orphanCmdRows });
     }
 
     const rowEls = scope.querySelectorAll ? scope.querySelectorAll(SEL_TOOL_ROWS) : [];
@@ -3453,6 +3521,143 @@
             markToolSummaryFailed(`${modePrefix}${uniqueTrimmed[k]}`, until);
           }
         });
+    }
+  }
+
+  function isForeignAssistantProse(norm, targetLang = currentLang) {
+    if (!norm || norm.length < 16 || norm.length > 4000) return false;
+    const tl = normalizeLangCode(targetLang) || resolveActiveLang();
+    if (tl === 'en') return false;
+    const prose = norm
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`[^`\n]+`/g, ' ')
+      .replace(/https?:\/\/\S+/g, ' ')
+      .replace(/[A-Za-z]:[\\/][^\s"'<>|]+/g, ' ')
+      .replace(/(?:\/[A-Za-z0-9._-]+){2,}/g, ' ');
+    if (!prose.trim()) return false;
+    const c = countScripts(prose);
+    if (tl === 'zh-CN' || tl === 'zh-TW') {
+      return c.lw >= 5 && (c.cjk < 4 || (c.lw >= 8 && c.cjk < c.lw * 0.25));
+    }
+    if (tl === 'ja') return c.lw >= 6 && c.kana < 4;
+    if (tl === 'ko') return c.lw >= 6 && c.han < 4;
+    return false;
+  }
+
+  const RICH_PROSE_SKIP_TAGS = new Set('PRE,TABLE,IMG,IFRAME,FORM,INPUT,TEXTAREA,SELECT,VIDEO,AUDIO,CANVAS'.split(','));
+
+  function containsRichProseNode(node) {
+    if (!node || node.nodeType !== 1) return false;
+    const tag = node.tagName ? String(node.tagName).toUpperCase() : '';
+    if (RICH_PROSE_SKIP_TAGS.has(tag)) return true;
+    const chs = node.children || node[K_CN];
+    if (chs && chs.length) {
+      for (let i = 0; i < chs.length; i++) {
+        if (chs[i] && chs[i].nodeType === 1 && containsRichProseNode(chs[i])) return true;
+      }
+    }
+    return false;
+  }
+
+  function scanAssistantProseBlocks() {
+    if (!translateToolSummaries || currentMode === 'off' || typeof document === 'undefined') return;
+    const br = getBridge();
+    if (!br || typeof br.translateStream !== 'function') return;
+
+    const scope = isConn(cachedConvRoot) && cachedConvRoot.querySelectorAll ? cachedConvRoot : document;
+    const mdNodes = scope.querySelectorAll ? scope.querySelectorAll('[data-markdown-root]') : [];
+    if (!mdNodes || !mdNodes.length) return;
+
+    const thoughtPanelSet = new Set();
+    const tBtns = queryTriggers();
+    for (let i = 0; i < tBtns.length; i++) {
+      const tp = nextSib(tBtns[i]);
+      if (tp) thoughtPanelSet.add(tp);
+    }
+
+    const activeLang = resolveActiveLang();
+    const now = nowMs();
+
+    for (let i = 0; i < mdNodes.length; i++) {
+      const md = mdNodes[i];
+      if (!md || !isConn(md) || isOverlayOrIgnoredElement(md)) continue;
+      let insideThoughtOrUser = false;
+      let respEl = null;
+      let cur = parEl(md);
+      while (cur) {
+        if (thoughtPanelSet.has(cur) || isOverlayOrIgnoredElement(cur)) {
+          insideThoughtOrUser = true;
+          break;
+        }
+        const ctid = ga(cur, 'data-testid');
+        if (ctid === 'user-message' || ctid === 'user-message-bubble') {
+          insideThoughtOrUser = true;
+          break;
+        }
+        if (cur.previousElementSibling && ga(cur.previousElementSibling, 'data-testid') === 'thinking-collapsible-trigger') {
+          insideThoughtOrUser = true;
+          break;
+        }
+        if (ctid === 'agent-response') {
+          respEl = cur;
+          break;
+        }
+        if (cur === scope) break;
+        cur = parEl(cur);
+      }
+      if (insideThoughtOrUser || !respEl) continue;
+      if (containsRichProseNode(md)) continue;
+      if (isHiddenByAncestor(null, md)) continue;
+      if (probeViewportBand(md) === 0) {
+        hasOffscreenLazyPanels = true;
+        continue;
+      }
+
+      const inf = extractPanelInfo(md, true);
+      if (!inf.t || !isForeignAssistantProse(inf.t, activeLang)) {
+        if (ga(md, A_PRP) === '1') cleanSinglePanelAttributes(md);
+        continue;
+      }
+
+      const srcSkelHash = `sig${inf.k}`;
+      const sig = sigFromBody(inf.k, currentMode);
+      if (ga(md, A_RDY) === '1' && ga(md, A_SIG) === sig) continue;
+
+      let meta = panelMeta.get(md);
+      if (!meta) {
+        const respBusy = Boolean(
+          i === mdNodes.length - 1 &&
+            respEl.querySelector &&
+            respEl.querySelector('[data-testid="status-loading-spinner"], .animate-shimmer-text')
+        );
+        meta = { h: srcSkelHash, c: now, s: false, m: respBusy, f: now - FINISH_GATE_MS, ds: '', ps: '', rs: inf.s };
+        panelMeta.set(md, meta);
+      } else if (meta.h !== srcSkelHash) {
+        meta.h = srcSkelHash;
+        meta.c = now;
+        meta.m = true;
+        meta.rs = inf.s;
+        panelMeta.set(md, meta);
+      }
+
+      if (meta.m && now - meta.c < QUIET_GATE_MS) {
+        scheduleScan(QUIET_GATE_MS - (now - meta.c) + 40);
+        continue;
+      }
+
+      sa(md, A_PRP, '1');
+      const cached = findCachedByBody(inf.k, currentMode);
+      if (cached) {
+        renderTranslatedText(md, cached, false, sig, currentMode === 'machine' ? 'machine' : 'ai');
+        continue;
+      }
+      if (isSigInCooldown(sig)) continue;
+      const activeFlight = inflightBySig.get(sig);
+      if (activeFlight && !activeFlight.x && now - activeFlight.at <= INFLIGHT_TTL_MS) {
+        bindPanelToInflight(activeFlight, md, true);
+        continue;
+      }
+      startOrJoinTranslation(md, inf.t, currentMode, sig, srcSkelHash, true, { priority: 6000 });
     }
   }
 

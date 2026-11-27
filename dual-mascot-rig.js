@@ -287,12 +287,15 @@
     return grid.map((r) => r.join(''));
   }
 
-  function drawLayerSet(ctx, oxGrid, oyGrid, pxSize, palette, layers, colorResolver = null) {
+  function drawLayerSet(ctx, oxGrid, oyGrid, pxSize, palette, layers, colorResolver = null, dpr = 1) {
     let lf = '';
+    const snap = dpr && dpr !== 1;
     for (const part of layers) {
       if (!part || !part.rows || !part.rows.length) continue;
       for (let ry = 0; ry < part.rows.length; ry++) {
         const row = part.rows[ry], py = (oyGrid + part.oy + ry) * pxSize, gy = part.oy + ry;
+        const y0 = snap ? round(py * dpr) / dpr : py;
+        const yH = snap ? round((py + pxSize) * dpr) / dpr - y0 : pxSize;
         for (let rx = 0; rx < row.length; rx++) {
           const ch = row[rx];
           if (ch === '.' || ch === ' ') continue;
@@ -307,7 +310,13 @@
             r++;
           }
           if (color !== lf) ctx.fillStyle = lf = color;
-          ctx.fillRect((oxGrid + gx) * pxSize, py, pxSize * r, pxSize);
+          const px0 = (oxGrid + gx) * pxSize;
+          if (snap) {
+            const x0 = round(px0 * dpr) / dpr;
+            ctx.fillRect(x0, y0, round((px0 + pxSize * r) * dpr) / dpr - x0, yH);
+          } else {
+            ctx.fillRect(px0, y0, pxSize * r, yH);
+          }
           rx += r - 1;
         }
       }
@@ -472,8 +481,9 @@
     ctx.imageSmoothingEnabled = false;
 
     const mirror = !!options.mirror;
-    // 垂直位移吸附到整格，保证方块网格不出现亚格错位
-    const tyPx = round(Number(options.tyPx || 0) / pxSize) * pxSize;
+    // 垂直位移吸附到整格并对齐物理像素，保证分数 DPI (125%/150%/175%) 下无水平接缝
+    const rawTy = round(Number(options.tyPx || 0) / pxSize) * pxSize;
+    const tyPx = dpr !== 1 ? round(rawTy * dpr) / dpr : rawTy;
     const rotDeg = Number(options.rotDeg || 0);
     const clipBottomY = options.clipBottomY;
     // 兼容旧入参 sxScale/syScale：换算为 16×10 画框上的整数格增量
@@ -482,7 +492,8 @@
     const sqH =
       options.sqH !== undefined ? round(options.sqH) : round(10 * (Number(options.syScale || 1) - 1));
 
-    const anchorX = (oxGrid + 8) * pxSize;
+    const rawAnchorX = (oxGrid + 8) * pxSize;
+    const anchorX = dpr !== 1 ? round(rawAnchorX * dpr) / dpr : rawAnchorX;
     const anchorY = (oyGrid + 10) * pxSize;
 
     const groundedLayers = [];
@@ -536,7 +547,7 @@
         ctx.scale(-1, 1);
         ctx.translate(-anchorX, 0);
       }
-      drawLayerSet(ctx, oxGrid, oyGrid, pxSize, palette, groundedLayers);
+      drawLayerSet(ctx, oxGrid, oyGrid, pxSize, palette, groundedLayers, null, dpr);
       ctx.restore();
     }
 
@@ -554,7 +565,7 @@
         c2.translate(anchorX, 0);
         c2.scale(-1, 1);
         c2.translate(-anchorX, 0);
-        drawLayerSet(c2, oxGrid, oyGrid, pxSize, palette, flipSet, options.colorResolver || null);
+        drawLayerSet(c2, oxGrid, oyGrid, pxSize, palette, flipSet, options.colorResolver || null, dpr);
         if (isFn(options.overlayPainter)) {
           options.overlayPainter(c2, oxGrid, oyGrid, pxSize);
         }
@@ -564,10 +575,10 @@
             const w = max(1, ...s.rows.map((r) => r.length));
             return { ...s, ox: 16 - (s.ox + w) };
           });
-          drawLayerSet(c2, oxGrid, oyGrid, pxSize, palette, placed, options.colorResolver || null);
+          drawLayerSet(c2, oxGrid, oyGrid, pxSize, palette, placed, options.colorResolver || null, dpr);
         }
       } else {
-        drawLayerSet(c2, oxGrid, oyGrid, pxSize, palette, elasticLayers, options.colorResolver || null);
+        drawLayerSet(c2, oxGrid, oyGrid, pxSize, palette, elasticLayers, options.colorResolver || null, dpr);
         if (isFn(options.overlayPainter)) {
           options.overlayPainter(c2, oxGrid, oyGrid, pxSize);
         }
@@ -1531,7 +1542,9 @@
     let popoverRightWidth = Number(options.popoverRightWidth || 0);
     let miniPileEnabled = !!roster.minis;
     let orchestrator = !!options.orchestrator;
-    let prismaticCoat = readChromaSaved();
+    const disableChroma = !!options.disableChroma;
+    if (disableChroma) writeChromaSaved(false);
+    let prismaticCoat = disableChroma ? false : readChromaSaved();
     const sharedSessionGates =
       !options.storage && hostEl && typeof hostEl === 'object'
         ? (hostEl.__opChromaGates || (hostEl.__opChromaGates = { tuned: false, forged: false }))
@@ -1674,7 +1687,7 @@
       const cell = 3;
       const hCells = spr.rows.length;
       const oy = max(0, floor(cssH / cell) - hCells);
-      drawLayerSet(ctx, 0, oy, cell, PALETTES.clawd, [spr]);
+      drawLayerSet(ctx, 0, oy, cell, PALETTES.clawd, [spr], null, dpr);
       habitatCanvas.setAttribute('data-habitat-mode', mode);
     };
     renderHabitatProp(true);
@@ -3272,6 +3285,7 @@
     }
 
     const toggleChromaResonance = (now, targetCat = null) => {
+      if (disableChroma) return;
       prismaticCoat = !prismaticCoat;
       writeChromaSaved(prismaticCoat);
       const cat = targetCat || actors.cat || activeMainActors().find((a) => a.kind === 'cat') || leaderActor();
@@ -3298,7 +3312,7 @@
       const now = nowMs();
       markActivity();
 
-      if (actor.kind === 'cat') {
+      if (!disableChroma && actor.kind === 'cat') {
         const towerLen = getTowerMembers(actor.id).length;
         if (towerLen >= 2 && (prismaticCoat || (chromaGates.tuned && chromaGates.forged))) {
           while (chromaTapTimes.length && now - chromaTapTimes[0] > 2600) chromaTapTimes.shift();
@@ -4677,7 +4691,7 @@
       boost(workers, partners) {
         for (const w of workers) {
           startClip(w, 'slashBoost', 2600);
-          if (!reducedMotion) { spawnChromaBurst(getEntWorldCx(w), computeWorldFootY(w) - 18, 12, false); hop(w, 'slashBoost'); }
+          if (!reducedMotion) { if (!disableChroma) spawnChromaBurst(getEntWorldCx(w), computeWorldFootY(w) - 18, 12, false); hop(w, 'slashBoost'); }
         }
         for (const p of partners) startClip(p, 'wow', 2200, { sym: 'spark' });
       },
@@ -4756,7 +4770,7 @@
           if (!workers.length) return;
           for (const w of workers) {
             startClip(w, 'slashBoost', 2200, { sym: 'spark' });
-            if (!reducedMotion) spawnChromaBurst(getEntWorldCx(w), computeWorldFootY(w) - 16, 6, true);
+            if (!reducedMotion && !disableChroma) spawnChromaBurst(getEntWorldCx(w), computeWorldFootY(w) - 16, 6, true);
           }
           recordInteraction('effort-tier:' + tier, workers[0].id, nowMs());
         }

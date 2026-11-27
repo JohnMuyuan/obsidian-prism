@@ -1179,29 +1179,34 @@ test('Wave 3 home-studio-panel P2-3: quota telemetry refreshes perform 0 panel r
   assert.ok(seat && panel);
   assert.equal(seat.getAttribute('data-ag-owned'), '1', 'P1-2b: panelSeat must carry data-ag-owned="1"');
 
-  // 1) Overview tab: quota refreshes must perform 0 panel re-renders (panel._innerHtmlSets unchanged)
+  // 1) Overview tab: quota refreshes must perform 0 panel/body re-renders
   const setsOnOverview = panel._innerHtmlSets;
   const firstChildOverview = panel.firstElementChild;
+  const bodyOnOverview = panel.querySelector('.ag-cs-home-body');
   await ctl.refreshLiveTelemetrySnapshot(true);
   await ctl.refreshLiveTelemetrySnapshot(true);
   ctl.renderHomePanel();
   assert.equal(panel._innerHtmlSets, setsOnOverview, 'P2-3: quota refresh on overview tab must trigger 0 panel innerHTML rebuilds');
-  assert.equal(panel.firstElementChild, firstChildOverview, 'Overview DOM nodes must remain intact');
+  assert.equal(panel.firstElementChild, firstChildOverview, 'Overview header DOM nodes must remain intact');
+  assert.equal(panel.querySelector('.ag-cs-home-body'), bodyOnOverview, 'Overview body DOM nodes must remain intact');
 
-  // 2) Models tab: quota refreshes must ALSO perform 0 panel re-renders
+  // 2) Models tab: quota refreshes must ALSO perform 0 panel/body re-renders, while header stays preserved across tab switch
   const modelsTabBtn = panel.querySelector('button[data-tab="models"]');
   modelsTabBtn.click();
+  assert.equal(panel.firstElementChild, firstChildOverview, 'Tab switch must preserve .ag-cs-home-panel-head without full innerHTML wipe');
   const setsOnModels = panel._innerHtmlSets;
+  const bodyOnModels = panel.querySelector('.ag-cs-home-body');
   await ctl.refreshLiveTelemetrySnapshot(true);
   ctl.renderHomePanel();
   assert.equal(panel._innerHtmlSets, setsOnModels, 'P2-3: quota refresh on models tab must trigger 0 panel innerHTML rebuilds');
+  assert.equal(panel.querySelector('.ag-cs-home-body'), bodyOnModels, 'Models body DOM nodes must remain intact');
 
-  // 3) Quotas tab: quota refresh DOES trigger re-render with updated quota cards
+  // 3) Quotas tab: quota refresh DOES re-render body with updated quota cards while keeping header intact
   const quotasTabBtn = panel.querySelector('button[data-tab="quotas"]');
   quotasTabBtn.click();
-  const setsBeforeQuotaRefresh = panel._innerHtmlSets;
+  const bodyBeforeQuotaRefresh = panel.querySelector('.ag-cs-home-body');
   await ctl.refreshLiveTelemetrySnapshot(true);
-  assert.ok(panel._innerHtmlSets > setsBeforeQuotaRefresh, 'P2-3: quotas tab must re-render when quota snapshot updates');
+  assert.notEqual(panel.querySelector('.ag-cs-home-body'), bodyBeforeQuotaRefresh, 'P2-3: quotas tab must re-render body when quota snapshot updates');
   assert.ok(panel.querySelector('.ag-cs-quota-card'), 'Quotas tab must render quota cards');
 });
 

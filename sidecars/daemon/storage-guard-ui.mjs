@@ -209,6 +209,19 @@ export function buildStorageGuardBannerExpression(payload = {}) {
       });
       actions.appendChild(btnSnooze);
 
+      const btnMute = document.createElement('button');
+      btnMute.type = 'button';
+      btnMute.className = 'ag-sg-btn';
+      btnMute.setAttribute('data-ag-sg-action', 'mute-forever');
+      btnMute.textContent = c.muteForeverBtn || "Don't remind again";
+      btnMute.addEventListener('click', () => {
+        btnMute.disabled = true;
+        void callRepo({ action: 'storage-snooze', muted: true }).finally(() => {
+          root.remove();
+        });
+      });
+      actions.appendChild(btnMute);
+
       const confirmBox = document.createElement('div');
       confirmBox.className = 'ag-sg-confirm';
       confirmBox.hidden = true;

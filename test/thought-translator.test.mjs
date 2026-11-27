@@ -3666,3 +3666,111 @@ test('Red-team security hardening: HTTPS proxy SNI servername, microtask queue c
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('On-demand local Ollama lifecycle: lazy single-flight start, external non-interference, idle shutdown, and dispose cleanup', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prism-ollama-lifecycle-'));
+  try {
+    // 1) Lazy single-flight start + dispose cleanup
+    const spawned = [];
+    let serverUp = false;
+    const svc = new ThoughtTranslatorService({
+      configDir: tmpDir,
+      manageLocalOllama: true,
+      ollamaBin: 'ollama-test-bin',
+      ollamaKeepAlive: '3m',
+      ollamaIdleMs: 5000,
+      ollamaProbeImpl: async () => serverUp,
+      ollamaSpawnImpl: (bin, args, opts) => {
+        const child = {
+          bin,
+          args,
+          opts,
+          killed: false,
+          exitCode: null,
+          listeners: {},
+          on(ev, fn) { this.listeners[ev] = fn; },
+          unref() {},
+          kill() {
+            this.killed = true;
+            this.exitCode = 0;
+            this.listeners.exit?.(0);
+          },
+        };
+        spawned.push(child);
+        setTimeout(() => { serverUp = true; }, 30);
+        return child;
+      },
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: '本地模型译文' } }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    });
+
+    // Remote URL must never spawn Ollama
+    await svc._request('https://api.openai.com/v1/chat/completions', { method: 'POST' });
+    assert.equal(spawned.length, 0, 'Remote URL must not spawn local Ollama');
+
+    // Concurrent local Ollama requests coalesce to a single spawn
+    await Promise.all([
+      svc._request('http://127.0.0.1:11434/v1/chat/completions', { method: 'POST' }),
+      svc._request('http://localhost:11434/v1/models', { method: 'GET' }),
+    ]);
+    assert.equal(spawned.length, 1, 'Concurrent Ollama requests must coalesce into 1 spawn');
+    assert.equal(spawned[0].bin, 'ollama-test-bin');
+    assert.deepEqual(spawned[0].args, ['serve']);
+    assert.equal(spawned[0].opts.windowsHide, true);
+    assert.equal(spawned[0].opts.env.OLLAMA_HOST, '127.0.0.1:11434');
+    assert.equal(spawned[0].opts.env.OLLAMA_KEEP_ALIVE, '3m');
+
+    // dispose() stops managed Ollama cleanly
+    svc.dispose();
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(spawned[0].killed, true, 'dispose() must terminate managed Ollama process');
+
+    // 2) External already-running Ollama must never be spawned or killed
+    let extSpawns = 0;
+    const extSvc = new ThoughtTranslatorService({
+      configDir: tmpDir,
+      manageLocalOllama: true,
+      ollamaProbeImpl: async () => true,
+      ollamaSpawnImpl: () => { extSpawns += 1; return null; },
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+    });
+    await extSvc._request('http://127.0.0.1:11434/v1/models', { method: 'GET' });
+    assert.equal(extSpawns, 0, 'Already-running external Ollama must not be re-spawned');
+    assert.equal(await extSvc.stopManagedOllama(), false, 'stopManagedOllama must not kill external Ollama');
+    extSvc.dispose();
+
+    // 3) Idle timer automatically terminates managed Ollama after inactivity
+    let idleUp = false;
+    let idleChild = null;
+    const idleSvc = new ThoughtTranslatorService({
+      configDir: tmpDir,
+      manageLocalOllama: true,
+      ollamaBin: 'ollama-idle-bin',
+      ollamaIdleMs: 60,
+      ollamaProbeImpl: async () => idleUp,
+      ollamaSpawnImpl: () => {
+        idleChild = {
+          killed: false,
+          exitCode: null,
+          listeners: {},
+          on(ev, fn) { this.listeners[ev] = fn; },
+          unref() {},
+          kill() { this.killed = true; this.exitCode = 0; this.listeners.exit?.(0); },
+        };
+        setTimeout(() => { idleUp = true; }, 10);
+        return idleChild;
+      },
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+    });
+    await idleSvc._request('http://127.0.0.1:11434/v1/models', { method: 'GET' });
+    assert.ok(idleChild && !idleChild.killed);
+    await new Promise((r) => setTimeout(r, 140));
+    assert.equal(idleChild.killed, true, 'Idle timer must stop managed Ollama after inactivity');
+    idleSvc.dispose();
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

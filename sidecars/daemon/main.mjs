@@ -2306,16 +2306,17 @@ export class PrismDaemon {
   _readStorageGuardState() {
     try {
       const file = this._storageGuardStateFile;
-      if (!file || !fs.existsSync(file)) return { snoozeUntilMs: 0, firstPromptShownAt: 0 };
+      if (!file || !fs.existsSync(file)) return { snoozeUntilMs: 0, firstPromptShownAt: 0, muted: false };
       const st = assertNotSymlinkSync(file, 'storage guard state');
-      if (!st || !st.isFile() || st.size > 65536) return { snoozeUntilMs: 0, firstPromptShownAt: 0 };
+      if (!st || !st.isFile() || st.size > 65536) return { snoozeUntilMs: 0, firstPromptShownAt: 0, muted: false };
       const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
       return {
         snoozeUntilMs: Math.max(0, Number(parsed?.snoozeUntilMs || 0) || 0),
         firstPromptShownAt: Math.max(0, Number(parsed?.firstPromptShownAt || 0) || 0),
+        muted: Boolean(parsed?.muted),
       };
     } catch {
-      return { snoozeUntilMs: 0, firstPromptShownAt: 0 };
+      return { snoozeUntilMs: 0, firstPromptShownAt: 0, muted: false };
     }
   }
 
@@ -2332,6 +2333,7 @@ export class PrismDaemon {
           patch.firstPromptShownAt !== undefined
             ? Math.max(0, Number(patch.firstPromptShownAt) || 0)
             : cur.firstPromptShownAt,
+        muted: patch.muted !== undefined ? Boolean(patch.muted) : Boolean(cur.muted),
         updatedAt: new Date().toISOString(),
       };
       const dir = path.dirname(file);
@@ -2820,6 +2822,9 @@ export class PrismDaemon {
 
       const batches = arch.listArchiveBatches(archiveDir);
       const recentBatches = batches.slice(0, 12);
+      if (typeof arch.pruneStaleActiveArchiveTask === 'function') {
+        try { arch.pruneStaleActiveArchiveTask(archiveDir, { now }); } catch {}
+      }
       const lastArchiveResult = arch.readLastArchiveResult(archiveDir);
       const guardState = this._readStorageGuardState();
       const base = {
@@ -2849,6 +2854,7 @@ export class PrismDaemon {
         latestBatch: batches[0] || null,
         lastArchiveResult,
         snoozeUntilMs: guardState.snoozeUntilMs,
+        guardMuted: Boolean(guardState.muted),
       };
 
       if (action === 'storage-detail') {
@@ -2920,6 +2926,27 @@ export class PrismDaemon {
       }
 
       if (action === 'archive-and-restart') {
+        const archiveMode =
+          rawInput?.mode === 'subagents+old-main' || rawInput?.oldMain === true
+            ? 'subagents+old-main'
+            : 'subagents';
+        const archiveTargets =
+          archiveMode === 'subagents+old-main'
+            ? [...(scan.archivableSubagents || []), ...(scan.archivableOldMain || [])]
+            : [...(scan.archivableSubagents || [])];
+        if (!_testOverrides && rawInput?.allowEmpty !== true && archiveTargets.length === 0) {
+          return {
+            ...base,
+            ok: false,
+            action,
+            mode: archiveMode,
+            code: 'NO_ARCHIVABLE_TARGETS',
+            error:
+              archiveMode === 'subagents+old-main'
+                ? '当前没有可归档的子代理或超过 14 天的旧主对话，无需重启。'
+                : '当前没有可归档的已结束子代理（0 项），无需重启。如需归档旧主对话，请展开下方「存储明细」操作。',
+          };
+        }
         if (_testOverrides?.forceBusy !== true) {
           const idleState = await this._checkActiveHostIdleState(_testOverrides);
           if (!idleState?.idle) {
@@ -2933,8 +2960,8 @@ export class PrismDaemon {
           }
         }
         const snapRes =
-          scan.archivableSubagents?.length > 0 && !_testOverrides?.skipUsageSnapshot
-            ? await this._snapshotUsageBeforeArchive(scan.archivableSubagents, { maxFetch: 24, timeoutMs: 6000 }).catch(() => ({ fetched: 0, flushed: false }))
+          archiveTargets.length > 0 && !_testOverrides?.skipUsageSnapshot
+            ? await this._snapshotUsageBeforeArchive(archiveTargets, { maxFetch: 24, timeoutMs: 6000 }).catch(() => ({ fetched: 0, flushed: false }))
             : { fetched: 0, flushed: true };
         this._flushUsageDiskCache();
 
@@ -2953,12 +2980,13 @@ export class PrismDaemon {
             convDir,
             archiveDir,
             hostPid: host?.pid || 0,
+            daemonPid: process.pid,
             cdpPort: cdpTarget.cdpPort,
             cdpBrowserWsPath: cdpTarget.cdpBrowserWsPath,
             exePath: host?.exePath || '',
             gracefulQuit: true,
             relaunch: true,
-            mode: 'subagents',
+            mode: archiveMode,
             subagentMaxAgeHours: subagentHours,
             settleMs: 4000,
           },
@@ -2978,6 +3006,7 @@ export class PrismDaemon {
         return {
           ...base,
           ok: Boolean(spawnRes?.spawned),
+          mode: archiveMode,
           ...(spawnRes?.spawned ? {} : { code: spawnRes?.code || 'SPAWN_FAILED', error: spawnRes?.error || 'Failed to launch detached archive task' }),
           scheduled: Boolean(spawnRes?.spawned),
           method: spawnRes?.method || 'custom',
@@ -3071,6 +3100,7 @@ export class PrismDaemon {
             convDir,
             archiveDir,
             hostPid: host?.pid || 0,
+            daemonPid: process.pid,
             cdpPort: cdpTarget.cdpPort,
             cdpBrowserWsPath: cdpTarget.cdpBrowserWsPath,
             exePath: host?.exePath || '',
@@ -3110,18 +3140,37 @@ export class PrismDaemon {
   }
 
   async _handleStorageSnoozeAction(rawInput = {}) {
-    const hours = Math.max(1, Math.min(168, Number(rawInput?.hours) || 24));
-    const snoozeUntilMs = Date.now() + hours * 3600000;
-    this._writeStorageGuardState({ snoozeUntilMs });
+    const hasMutedFlag = typeof rawInput?.muted === 'boolean';
+    const permanent = rawInput?.permanent === true || (hasMutedFlag && rawInput.muted === true);
+    const unmute = hasMutedFlag && rawInput.muted === false;
+    let snoozeUntilMs = 0;
+    let hours = 0;
+    if (permanent) {
+      this._writeStorageGuardState({ muted: true, snoozeUntilMs: 0 });
+    } else if (unmute) {
+      this._writeStorageGuardState({ muted: false, snoozeUntilMs: 0 });
+    } else {
+      hours = Math.max(1, Math.min(168, Number(rawInput?.hours) || 24));
+      snoozeUntilMs = Date.now() + hours * 3600000;
+      this._writeStorageGuardState({ snoozeUntilMs });
+    }
     this._storageHealthCache = null;
     this._storageHealthAt = 0;
-    const dismissExpr = buildStorageGuardDismissExpression();
-    for (const entry of this.sessions.values()) {
-      if (entry && !entry.session?.closed) {
-        await entry.session.evaluate(dismissExpr).catch(() => {});
+    if (!unmute) {
+      const dismissExpr = buildStorageGuardDismissExpression();
+      for (const entry of this.sessions.values()) {
+        if (entry && !entry.session?.closed) {
+          await entry.session.evaluate(dismissExpr).catch(() => {});
+        }
       }
     }
-    return { ok: true, action: 'storage-snooze', hours, snoozeUntilMs };
+    return {
+      ok: true,
+      action: 'storage-snooze',
+      hours,
+      snoozeUntilMs,
+      guardMuted: permanent ? true : unmute ? false : Boolean(this._readStorageGuardState().muted),
+    };
   }
 
   async _handleGoMemLimitAction(action, rawInput = {}) {
@@ -3264,6 +3313,9 @@ export class PrismDaemon {
     if (!this.running && !_testOverrides) return { shown: false, reason: 'not-running' };
     const now = Number.isFinite(_testOverrides?.now) ? _testOverrides.now : Date.now();
     const state = this._readStorageGuardState();
+    if (state.muted) {
+      return { shown: false, reason: 'muted' };
+    }
     if (state.snoozeUntilMs > now) {
       return { shown: false, reason: 'snoozed', snoozeUntilMs: state.snoozeUntilMs };
     }
@@ -3283,6 +3335,11 @@ export class PrismDaemon {
     const health = await this._handleStorageAction('storage-health', _testOverrides, { force: Boolean(_testOverrides) });
     if (!health?.ok || !health.warn) {
       return { shown: false, reason: 'healthy', health };
+    }
+    const hasHighLsMem = Array.isArray(health.warnReasons) && health.warnReasons.includes('ls-memory');
+    const hasArchivableSubagents = Number(health.archivableSubagentCount || 0) > 0;
+    if (!hasHighLsMem && !hasArchivableSubagents) {
+      return { shown: false, reason: 'nothing-archivable', health };
     }
 
     const idleState = await this._checkActiveHostIdleState(_testOverrides);
@@ -3321,6 +3378,16 @@ export class PrismDaemon {
       fr: 'Fermer',
       de: 'Schließen',
     };
+    const muteLabels = {
+      'zh-CN': '永久不再提醒',
+      'zh-TW': '永久不再提醒',
+      en: "Don't remind again",
+      ja: '今後表示しない',
+      ko: '다시 보지 않기',
+      es: 'No volver a avisar',
+      fr: 'Ne plus rappeler',
+      de: 'Nicht mehr erinnern',
+    };
     const expr = buildStorageGuardBannerExpression({
       autoArchiveOnExit: Boolean(health.autoArchiveOnExit),
       copy: {
@@ -3331,6 +3398,7 @@ export class PrismDaemon {
         enableAutoExitBtn: ui.storageGuardEnableAutoExitBtn || 'Enable Auto-Archive on Exit',
         autoExitEnabledMsg: ui.storageAutoExitEnabledMsg || 'Auto-archive on exit enabled',
         snooze24hBtn: ui.storageGuardSnooze24hBtn || 'Snooze 24h',
+        muteForeverBtn: muteLabels[resolvedLang] || "Don't remind again",
         confirmDesc:
           ui.storageArchiveRestartConfirmDesc ||
           'Will save token ledger, close Antigravity gracefully, move finished subagents (>2h) without deleting any files, keep all main chats, and restart.',
@@ -4971,6 +5039,10 @@ export class PrismDaemon {
     );
   }
 
+  _isInlineDiffEnabled(cfg = null) {
+    return cfg?.inlineDiff !== 'off';
+  }
+
   _hasInlineDiffClientFile() {
     try {
       return fs.existsSync(path.join(this.rootDir, 'vendor', 'inline-diff', 'inline-diff-client.js'));
@@ -4997,7 +5069,7 @@ export class PrismDaemon {
 
   _buildInlineDiffExprForConfig(cfgOverride = null, cacheOpts = undefined) {
     const cfg = cfgOverride || (typeof this.cdp?.readConfig === 'function' ? this.cdp.readConfig() : null);
-    if (typeof this.cdp?.buildInlineDiffInjectExpression !== 'function') {
+    if (!this._isInlineDiffEnabled(cfg) || typeof this.cdp?.buildInlineDiffInjectExpression !== 'function') {
       return this._setInlineDiffExpr('');
     }
     const opts = cacheOpts !== undefined ? cacheOpts : this._getChannelCacheOpts(true);
@@ -7643,7 +7715,10 @@ export class PrismDaemon {
           thoughtSnap = this._buildThoughtExprForConfig(currentCfg);
         }
         const thoughtSig = thoughtEnabled ? this._getThoughtCfgSig(currentCfg, thoughtSnap) : '';
-        if (!inlineDiffSnap && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
+        const inlineDiffEnabled = this._isInlineDiffEnabled(currentCfg);
+        if (!inlineDiffEnabled) {
+          inlineDiffSnap = this._setInlineDiffExpr('');
+        } else if (!inlineDiffSnap && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
           inlineDiffSnap = this._buildInlineDiffExprForConfig(currentCfg);
         }
         const inlineDiffHash = inlineDiffSnap ? this._getInlineDiffExprHash(inlineDiffSnap) : '';
@@ -7823,7 +7898,7 @@ export class PrismDaemon {
                   const evalRes = await entry.session.evaluate(inlineDiffSnap).catch(() => null);
                   await this._recordInlineDiffEvalOutcome(entry, evalRes, inlineDiffHash);
                 }
-              } else if (hadInlineDiff && !skippedStale && !entry.session.closed) {
+              } else if ((hadInlineDiff || !inlineDiffEnabled) && !skippedStale && !entry.session.closed) {
                 await entry.session.evaluate(this._getInlineDiffCleanupExpression()).catch(() => {});
                 entry.inlineDiffMounted = false;
                 entry.inlineDiffSkipped = false;
@@ -8283,7 +8358,7 @@ export class PrismDaemon {
           this._buildThoughtExprForConfig(curCfg, chOpts);
           if (chOpts) usedChCache = true;
         }
-        if (!this.inlineDiffExpr && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
+        if (!this.inlineDiffExpr && this._isInlineDiffEnabled(curCfg) && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
           this._buildInlineDiffExprForConfig(curCfg, chOpts);
           if (chOpts && this.inlineDiffExpr) usedChCache = true;
         }
@@ -8564,7 +8639,10 @@ export class PrismDaemon {
         entry.inlineDiffScriptId = null;
       }
       const inlineDiffCfgNow = getCurrentCfg();
-      if (!this.inlineDiffExpr && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
+      const inlineDiffEnabledNow = this._isInlineDiffEnabled(inlineDiffCfgNow);
+      if (!inlineDiffEnabledNow) {
+        this._setInlineDiffExpr('');
+      } else if (!this.inlineDiffExpr && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
         this._buildInlineDiffExprForConfig(inlineDiffCfgNow);
       }
       if (this.inlineDiffExpr) {
@@ -8584,7 +8662,7 @@ export class PrismDaemon {
           entry.lastInlineDiffScriptHash = '';
         }
       } else {
-        if (hadInlineDiffBefore) {
+        if (hadInlineDiffBefore || !inlineDiffEnabledNow) {
           await entry.session.evaluate(this._getInlineDiffCleanupExpression()).catch(() => null);
         }
         entry.inlineDiffMounted = false;
@@ -8769,6 +8847,9 @@ export class PrismDaemon {
       if (inputPayload.mode === undefined && parsed?.mode !== undefined) inputPayload.mode = parsed.mode;
       if (inputPayload.oldMain === undefined && parsed?.oldMain !== undefined) inputPayload.oldMain = parsed.oldMain;
       if (inputPayload.hours === undefined && parsed?.hours !== undefined) inputPayload.hours = parsed.hours;
+      if (inputPayload.muted === undefined && parsed?.muted !== undefined) inputPayload.muted = parsed.muted;
+      if (inputPayload.permanent === undefined && parsed?.permanent !== undefined) inputPayload.permanent = parsed.permanent;
+      if (inputPayload.allowEmpty === undefined && parsed?.allowEmpty !== undefined) inputPayload.allowEmpty = parsed.allowEmpty;
       if (inputPayload.listOnly === undefined && parsed?.listOnly !== undefined) inputPayload.listOnly = parsed.listOnly;
       if (inputPayload.autoArchiveOnExit === undefined && parsed?.autoArchiveOnExit !== undefined) {
         inputPayload.autoArchiveOnExit = parsed.autoArchiveOnExit;
@@ -9580,6 +9661,7 @@ export class PrismDaemon {
         this.sessions.delete(wsUrl);
         if (this.sessions.size === 0 && this._prevAttachedCount > 0) {
           this._disconnectedAllSessions = true;
+          void this._lazyThoughtService?.stopManagedOllama?.().catch?.(() => {});
         }
       }
     };
@@ -9857,7 +9939,7 @@ export class PrismDaemon {
     const thoughtNeedsSync = thoughtEnabled
       ? !entry.thoughtScriptId || !entry.thoughtMounted
       : Boolean(entry.thoughtScriptId || entry.thoughtMounted);
-    const inlineDiffAvailable = Boolean(this.inlineDiffExpr || this._hasInlineDiffClientFile());
+    const inlineDiffAvailable = this._isInlineDiffEnabled(cfg) && Boolean(this.inlineDiffExpr || this._hasInlineDiffClientFile());
     const inlineDiffNeedsSync = inlineDiffAvailable
       ? !entry.inlineDiffSkipped && (!entry.inlineDiffScriptId || !entry.inlineDiffMounted)
       : Boolean(entry.inlineDiffScriptId || entry.inlineDiffMounted);
@@ -11279,6 +11361,7 @@ export class PrismDaemon {
         if (this.sessions.size === 0 && this._prevAttachedCount > 0) {
           this._disconnectedAllSessions = true;
           this._prevAttachedCount = 0;
+          void this._lazyThoughtService?.stopManagedOllama?.().catch?.(() => {});
         }
         if (this.sessions.size === 0 && this._sawLiveHost && this._getAutoArchiveOnExitSetting() && !this._autoArchiveInFlight && !this._autoArchiveExitRan) {
           void this._maybeRunAutoArchiveOnExit().catch(() => {});

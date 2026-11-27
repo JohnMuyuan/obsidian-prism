@@ -1070,7 +1070,7 @@ test('style.css enforces GPU compositor offloading, dual daylight presets (Cryst
     '--background:#F6F4EE !important',
     '--ag-cs-bubble:#EFECE2',
     '--ag-cs-run-core:#FFFFFF',
-    '--ag-cs-run-star:#2563EB',
+    '--ag-cs-run-star:#334155',
     '--ag-cs-thought-rule:rgba(37,99,235,.45)',
     '@keyframes ag-cs-sonar-pulse-light',
     'rgba(37,99,235,.065)',

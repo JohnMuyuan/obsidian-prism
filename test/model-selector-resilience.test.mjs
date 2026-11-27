@@ -1870,9 +1870,433 @@ test('Scenario 12 (Issue #80 / v2.35.1 nested Orchestrator L3 inside L2): L2 nev
   assert.equal(l2Pos3.hasAttribute('data-ag-cs-orch-l3'), false, 'Outer L2 positioner must never be tagged orch-l3');
   assert.equal(sharedL3.getAttribute('data-ag-cs-orch-l3'), '1', 'Dedicated sibling L3 effort menu must be hidden');
 
+  // 4) Base-UI nested Orchestrator L2 submenu mounted INSIDE model-selector-panel (real Antigravity DOM) must also bind & tag data-ces-orch-row='1' so native right arrows are hidden
+  appRoot.remove();
+  const inPanelPos = env.makeEl('div', { attrs: { role: 'presentation' } });
+  const inPanelL2 = env.makeEl('div', { className: 'agy-overlay', attrs: { role: 'menu', 'data-side': 'right', 'data-nested': '' } });
+  const inPanelNeon = env.makeEl('div', { attrs: { role: 'menuitem', 'data-testid': 'orchestrator-picker-row', 'data-model-base': 'Gemini 4 Neon' }, text: 'Gemini 4 Neon Medium' });
+  const inPanelCarb = env.makeEl('div', { attrs: { role: 'menuitem', 'data-testid': 'orchestrator-picker-row', 'data-model-base': 'Gemini 4 Carbon' }, text: 'Gemini 4 Carbon High' });
+  inPanelL2.appendChild(inPanelNeon);
+  inPanelL2.appendChild(inPanelCarb);
+  inPanelPos.appendChild(inPanelL2);
+  listWrap.appendChild(inPanelPos);
+  agObs.rescan();
+  assert.equal(inPanelL2.getAttribute('data-ag-cs-orch-l2'), '1', 'Nested L2 submenu inside model-selector-panel must be tagged data-ag-cs-orch-l2=1');
+  assert.equal(inPanelNeon.getAttribute('data-ces-orch-row'), '1', 'Nested orchestrator-picker-row inside panel must receive data-ces-orch-row=1 to hide native arrow');
+  assert.equal(inPanelCarb.getAttribute('data-ces-orch-row'), '1');
+  assert.equal(panel.hasAttribute('data-ag-cs-orch-l2'), false, 'model-selector-panel itself must never be tagged data-ag-cs-orch-l2');
+  assert.equal(listWrap.hasAttribute('data-ag-cs-orch-l2'), false, 'Main model list wrapper must never be tagged data-ag-cs-orch-l2');
+
   agObs.stop();
+  assert.equal(inPanelL2.hasAttribute('data-ag-cs-orch-l2'), false);
+  assert.equal(inPanelNeon.hasAttribute('data-ces-orch-row'), false);
   assert.equal(l2Menu3.hasAttribute('data-ag-cs-orch-l2'), false);
   assert.equal(l2Pop3.hasAttribute('data-ag-cs-model-submenu'), false);
   assert.equal(l2Pos3.hasAttribute('data-ag-cs-model-submenu'), false);
   assert.equal(sharedL3.hasAttribute('data-ag-cs-orch-l3'), false);
+});
+
+test('Codex Desktop two-stage model picker: opens Effort-first card, resets default via right button, toggles Model List via centered model name, auto-returns after picking new tunable model, supports Escape & Classic layout switch', () => {
+  const env = createSimEnv();
+  const locales = require('../i18n-locales.js');
+  const neonLow = { label: 'Gemini 4 Neon (Low)', modelId: 'gemini-4-neon-low', value: 1534 };
+  const neonMed = { label: 'Gemini 4 Neon (Medium)', modelId: 'gemini-4-neon-medium', value: 1533 };
+  const neonHigh = { label: 'Gemini 4 Neon (High)', modelId: 'gemini-4-neon-high', value: 1532 };
+  const neonXHigh = { label: 'Gemini 4 Neon (XHigh)', modelId: 'gemini-4-neon-xhigh', value: 1535 };
+  const opusLow = { label: 'Claude Opus 5.5 (Low)', modelId: 'claude-opus-5-5-low', value: 1400 };
+  const opusMed = { label: 'Claude Opus 5.5 (Medium)', modelId: 'claude-opus-5-5-medium', value: 1401 };
+  const opusHigh = { label: 'Claude Opus 5.5 (High)', modelId: 'claude-opus-5-5-high', value: 1402 };
+  const gptOss = { label: 'GPT-OSS 120B (Medium)', modelId: 'gpt-oss-120b-medium', value: 342 };
+
+  const modelOptions = [neonLow, neonMed, neonHigh, neonXHigh, opusLow, opusMed, opusHigh, gptOss];
+  let selectedModel = neonXHigh;
+  let isOpen = true;
+  const committed = [];
+
+  const selectorCtx = {
+    effortIndex: new Map([
+      ['gemini-4-neon', new Map([['low', neonLow], ['medium', neonMed], ['high', neonHigh], ['xhigh', neonXHigh]])],
+      ['claude-opus-5-5', new Map([['low', opusLow], ['medium', opusMed], ['high', opusHigh]])],
+    ]),
+    modelOptions,
+    get selectedModel() { return selectedModel; },
+  };
+  const popoverProps = {
+    modelOptions,
+    get selectedModel() { return selectedModel; },
+    get open() { return isOpen; },
+    setIsOpen(v) { isOpen = Boolean(v); },
+    setSelectedModel(opt) { selectedModel = opt; isOpen = false; },
+  };
+  const globalModelCtx = {
+    setModelConfigByLabelForConversation(label, convId, keepOpen) {
+      committed.push({ label, convId, keepOpen });
+      selectedModel = modelOptions.find((o) => o.label === label) || selectedModel;
+    },
+  };
+
+  const trigger = env.makeTrigger('Gemini 4 Neon', 'Extra');
+  env.body.appendChild(trigger);
+  const overlay = env.makeEl('div', { className: 'agy-overlay' });
+  const { panel, listWrap } = env.makePanel();
+  const neonRow = env.addGroupRow(listWrap, 'Gemini 4 Neon', 'Extra');
+  const opusRow = env.addGroupRow(listWrap, 'Claude Opus 5.5', 'Medium');
+  const gptRow = env.addSingleRow(listWrap, gptOss.label);
+  overlay.appendChild(panel);
+  env.body.appendChild(overlay);
+  env.attachFiberChain(panel, { selectorCtx, popoverProps, convId: 'conv-codex', globalModelCtx });
+
+  const ctl = sliderCoexist.createEffortSliderController({ window: env.win, document: env.doc });
+  ctl.sync({ effortSliderModule: 'on', effortPanelLayout: 'codex', effortMemory: 'on' });
+
+  // 1) Opens in Codex Effort-first view; panel.firstElementChild stays native listWrap; starfield/Claude canvas preserved; only right reset button exists (no left lightning button)
+  assert.equal(panel.getAttribute('data-ces-layout'), 'codex');
+  assert.equal(panel.getAttribute('data-ces-view'), 'effort');
+  assert.equal(overlay.getAttribute('data-ces-ov'), 'effort');
+  assert.equal(panel.firstElementChild, listWrap, 'panel.firstElementChild must remain native model list wrapper');
+  assert.ok(panel.querySelector('.ces-stars') && panel.querySelector('.ces-claude-canvas'), 'Must preserve starfield & Claude dither layers');
+  assert.equal(panel.querySelector('.ces-cx-model-name')?.textContent, 'Gemini 4 Neon');
+  assert.equal(panel.querySelector('.ces-ag-effort-value')?.textContent, 'Extra');
+  const resetBtn = panel.querySelector('.ces-cx-reset');
+  assert.ok(resetBtn, 'Must render right reset button');
+  assert.equal(resetBtn.disabled, false);
+  assert.equal(resetBtn.getAttribute('data-at-default'), '0');
+  assert.equal(panel.querySelector('.ces-ag-effort-head').querySelectorAll('button').length, 2, 'Header must have only centered model switch + right reset button (no left icon)');
+
+  // 2) Clicking right reset button resets Gemini 4 Neon from Extra -> default Medium & clears remembered effort
+  resetBtn.dispatchEvent({ type: 'click', bubbles: true });
+  assert.equal(selectedModel.label, 'Gemini 4 Neon (Medium)');
+  assert.equal(panel.querySelector('.ces-ag-effort-value')?.textContent, 'Medium');
+  assert.equal(resetBtn.getAttribute('data-at-default'), '1');
+
+  // 3) Clicking centered model name flips to Model List view (data-ces-view="models")
+  const modelSwitchBtn = panel.querySelector('.ces-cx-model-btn');
+  modelSwitchBtn.dispatchEvent({ type: 'click', bubbles: true, detail: 1 });
+  assert.equal(panel.getAttribute('data-ces-view'), 'models');
+  assert.equal(overlay.getAttribute('data-ces-ov'), 'models');
+  assert.equal(modelSwitchBtn.getAttribute('aria-expanded'), 'true');
+  assert.equal(neonRow.row.getAttribute('data-ces-model-selected'), 'true');
+  assert.equal(neonRow.row.getAttribute('data-ces-has-chk'), '0');
+
+  // 4) Escape inside models view returns to effort view without closing outer menu
+  const escEv = { type: 'keydown', key: 'Escape', bubbles: true };
+  panel.dispatchEvent(escEv);
+  assert.equal(escEv.defaultPrevented, true);
+  assert.equal(panel.getAttribute('data-ces-view'), 'effort');
+  assert.equal(overlay.getAttribute('data-ces-ov'), 'effort');
+
+  // 5) Escape in effort view passes through untouched to close popover natively
+  const escOuter = { type: 'keydown', key: 'Escape', bubbles: true };
+  panel.dispatchEvent(escOuter);
+  assert.equal(escOuter.defaultPrevented, false);
+
+  // 6) Re-open model list -> click a NEW tunable model (Claude Opus 5.5) -> commits, keeps open, AND auto-returns to effort card!
+  modelSwitchBtn.dispatchEvent({ type: 'click', bubbles: true, detail: 1 });
+  assert.equal(panel.getAttribute('data-ces-view'), 'models');
+  const rOpus = env.simulateNativeClick(opusRow.groupSpan, () => { isOpen = false; });
+  assert.equal(rOpus.ck.defaultPrevented, true);
+  assert.equal(isOpen, true);
+  assert.equal(selectedModel.label, 'Claude Opus 5.5 (Medium)');
+  assert.equal(panel.getAttribute('data-ces-view'), 'effort', 'Picking a new tunable model must auto-return to Effort view');
+  assert.equal(panel.querySelector('.ces-cx-model-name')?.textContent, 'Claude Opus 5.5');
+  assert.equal(panel.querySelector('.ces-root')?.getAttribute('data-theme'), 'claude');
+
+  // 7) Open model list -> re-clicking already selected Claude Opus 5.5 or single/fixed GPT-OSS passes through natively to close
+  modelSwitchBtn.dispatchEvent({ type: 'click', bubbles: true, detail: 1 });
+  const rSame = env.simulateNativeClick(opusRow.groupSpan, () => { isOpen = false; });
+  assert.equal(rSame.ck.defaultPrevented, false);
+  assert.equal(rSame.nativeCalled, true);
+  isOpen = true;
+  const rFixed = env.simulateNativeClick(gptRow, () => { isOpen = false; });
+  assert.equal(rFixed.ck.defaultPrevented, false);
+  assert.equal(rFixed.nativeCalled, true);
+
+  // 8) Back button returns from models -> effort cleanly
+  panel.querySelector('.ces-cx-back').dispatchEvent({ type: 'click', bubbles: true, detail: 1 });
+  assert.equal(panel.getAttribute('data-ces-view'), 'effort');
+
+  // 9) Live switching setting to classic mode switches layout & clears overlay codex attribute
+  ctl.sync({ effortSliderModule: 'on', effortPanelLayout: 'classic', effortMemory: 'on' });
+  assert.equal(panel.getAttribute('data-ces-layout'), 'classic');
+  assert.equal(panel.getAttribute('data-ces-view'), 'classic');
+  assert.equal(overlay.hasAttribute('data-ces-ov'), false);
+
+  // 10) Destroy cleans up all injected elements & attributes
+  ctl.destroy();
+  assert.equal(panel.querySelector('.ces-cx-list-head'), null);
+  assert.equal(panel.hasAttribute('data-ces-layout'), false);
+  assert.equal(panel.hasAttribute('data-ces-view'), false);
+  assert.equal(overlay.hasAttribute('data-ces-ov'), false);
+
+  // 11) 8-language i18n coverage & 0 CJK leak in en/es/fr/de
+  const CJK_RE = /[\u3000-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/;
+  for (const lang of ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'es', 'fr', 'de']) {
+    const ui = locales.getUiStrings(lang);
+    for (const k of ['setEffortLayoutTitle', 'setEffortLayoutDesc', 'optEffortLayoutCodex', 'optEffortLayoutClassic']) {
+      assert.ok(typeof ui[k] === 'string' && ui[k].trim().length > 0, `Missing ${k} for ${lang}`);
+      if (['en', 'es', 'fr', 'de'].includes(lang)) {
+        assert.equal(CJK_RE.test(ui[k]), false, `Unexpected CJK leak in ${lang}.${k}`);
+      }
+    }
+  }
+});
+
+test('Model picker open render-pressure optimizations: lazy stars, 0x0 non-Claude canvas, deferred row glyphs in effort view, 0 idle orch bar', () => {
+  const env = createSimEnv();
+  const prevDoc = globalThis.document;
+  const prevPerf = globalThis.performance;
+  globalThis.document = env.doc;
+  globalThis.performance = env.win.performance;
+  try {
+    // 1) Claude & Gemini Direction A allocate 0 CSS star nodes; switching to Codex/GPT lazily populates 22 stars
+    const cCont = env.makeEl('div');
+    const cRow = env.makeEl('div');
+    let curSeat = {
+      baseName: 'Claude Opus 5.5', isClaude: true, theme: 'claude', currentEffort: 'high',
+      levels: [{ effort: 'low', label: 'Low' }, { effort: 'high', label: 'High' }],
+    };
+    const m = upstreamLib.mountCodexEffortSlider({
+      container: cCont, row: cRow, document: env.doc, window: env.win,
+      seat: { _read: () => curSeat },
+    });
+    assert.equal(cCont.querySelectorAll('.ces-star').length, 0, 'Claude slider must create 0 star DOM nodes');
+    assert.equal(cCont.querySelector('.ces-claude-canvas').width, 0, 'Non-painted Claude canvas starts 0x0');
+    curSeat = {
+      baseName: 'Gemini 4 Neon', isClaude: false, theme: 'codex', currentEffort: 'high',
+      levels: [{ effort: 'low', label: 'Low' }, { effort: 'high', label: 'High' }],
+    };
+    m.refresh();
+    assert.equal(cCont.querySelectorAll('.ces-star').length, 0, 'Gemini Direction A canvas must keep 0 CSS flying star DOM nodes');
+    curSeat = {
+      baseName: 'GPT-5.3 Codex', isClaude: false, theme: 'codex', currentEffort: 'high',
+      levels: [{ effort: 'low', label: 'Low' }, { effort: 'high', label: 'High' }],
+    };
+    m.refresh();
+    assert.equal(cCont.querySelectorAll('.ces-star').length, 22, 'Switching to Codex/GPT with energy > 0 must lazily build 22 stars');
+    m.unmount();
+
+    // 2) model-glyph-crystal skips row glyphs in effort view & skips orchestrator-effort-bar for non-Orchestrator, then mounts glyphs on models view
+    const panel = env.makeEl('div', { attrs: { 'data-testid': 'model-selector-panel', 'data-ces-view': 'effort' } });
+    const row = env.makeEl('div', { attrs: { role: 'menuitem' }, text: 'Gemini 4 Neon (High)' });
+    panel.appendChild(row);
+    env.body.appendChild(panel);
+    const mCtl = mgc.createModelGlyphCrystalController({
+      animatedIcons: null, crystalPrismCore: null, isDestroyed: () => false,
+      isComposerRestyleEnabled: () => true, isZh: () => false, isDarkTheme: () => true,
+      motionReduced: () => false, getMinFrameGapMs: () => 0, canMountRealCanvas: () => false,
+      getLastPointerPos: () => null, setAttrIfChanged: (el, k, v) => el.setAttribute(k, v),
+    });
+    mCtl.syncModelSelectorPanel({ brand: 'gemini', tier: 'high', isOrchestrator: false });
+    assert.equal(panel.querySelectorAll('.ag-cs-panel-row-glyph').length, 0, 'effort view must defer hidden model-row glyphs');
+    assert.equal(panel.querySelector('[data-testid="orchestrator-effort-bar"]'), null, 'Non-Orchestrator must not create idle orchestrator-effort-bar');
+    panel.setAttribute('data-ces-view', 'models');
+    mCtl.syncModelSelectorPanel({ brand: 'gemini', tier: 'high', isOrchestrator: false });
+    assert.equal(panel.querySelectorAll('.ag-cs-panel-row-glyph').length, 1, 'models view must mount row brand glyphs');
+    mCtl.teardownCrystalMount();
+
+    // 3) style.css drops heavy backdrop-filter and keeps style-only containment on model selector overlay (preserving fixed submenus like View Usage)
+    const css = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8');
+    assert.match(css, /\.agy-overlay\[data-ag-cs-model-overlay="1"\]\{[^}]*backdrop-filter:none !important;contain:style;/);
+    assert.equal(/\.agy-overlay\[data-ag-cs-model-overlay="1"\]\{[^}]*contain:layout/.test(css), false, 'model overlay must not use contain:layout which traps fixed View Usage submenu');
+    assert.ok(
+      css.includes('html[data-ag-cs-style]:not(#_) .agy-overlay[data-ag-cs-model-overlay="1"],html[data-ag-cs-style]:not(#_)[data-ag-cs-model-menu="1"] :is(.agy-overlay[data-ag-cs-model-submenu="1"],[data-ag-cs-orch-l2="1"],[data-testid="context-menu-submenu-popup"],[data-nested].agy-overlay){background:linear-gradient(var(--ag-cs-tonal-2),var(--ag-cs-tonal-2)),var(--background,var(--_k0)) !important;}'),
+      'model selector overlay and nested submenus must render an opaque solid background across host and custom palettes'
+    );
+  } finally {
+    globalThis.document = prevDoc;
+    globalThis.performance = prevPerf;
+  }
+});
+
+test('Gemini effort slider renders 4-point star knob/ticks/particles and Blue->Deep-Blue->Purple->Deep-Purple progression', () => {
+  const env = createSimEnv();
+  const prevDoc = globalThis.document;
+  globalThis.document = env.doc;
+  try {
+    const levels = ['low', 'medium', 'high', 'xhigh'];
+    let curModel = 'Gemini 4 Neon';
+    let curEffort = 'low';
+    env.doc.documentElement.setAttribute('data-ag-cs-motion', 'off');
+    const host = env.makeEl('div');
+    env.body.appendChild(host);
+    const m = upstreamLib.mountCodexEffortSlider({
+      container: host,
+      document: env.doc,
+      window: env.win,
+      seat: {
+        get baseName() { return curModel; },
+        get effortLevels() { return levels; },
+        get currentEffort() { return curEffort; },
+        selectEffort(e) { curEffort = e; },
+      },
+    });
+
+    const root = host.querySelector('.ces-root');
+    const track = host.querySelector('.ces-track');
+    assert.equal(root.getAttribute('data-ces-brand'), 'gemini', 'Gemini model must activate gemini slider brand');
+    assert.equal(track.getAttribute('data-ces-brand'), 'gemini');
+    assert.ok(host.querySelector('.ces-knob-star'), 'Gemini knob must mount 4-point star element');
+
+    const styleText = env.head.querySelector('#ag-codex-effort-slider-styles')?.textContent || '';
+    assert.ok(styleText.includes("width:calc(var(--ces-fill,14px) + 14px);max-width:100%;border-radius:999px"), 'Gemini fill layer must extend +14px with full pill radius so max tier leaves zero empty white gap');
+    assert.ok(styleText.includes(".ces-knob-star-glint") && styleText.includes(".ces-knob-star-aura") && styleText.includes(".ces-claude-canvas{border-radius:999px}"), 'Gemini slider must use sleek chromatic-rim pearlescent 4-point sparkle knob and unified Direction A diamond-lattice canvas');
+    assert.ok(styleText.includes("& :is(.ces-stars,.ces-energy){display:none!important}"), 'Gemini Direction A must suppress cluttered CSS flying dots & energy bar');
+    assert.ok(host.querySelector('.ces-claude-canvas'), 'Gemini slider must reuse unified lazy canvas inside fill');
+    assert.equal(typeof upstreamLib.paintGeminiAurora, 'function', 'upstreamLib must export paintGeminiAurora');
+    assert.ok(styleText.includes("transform:rotate(45deg)"), 'Gemini detent ticks must use crisp 45-degree micro-diamonds');
+
+    // Low (blue) -> Medium (deeper blue) -> High (purple) -> Extra High (deeper purple)
+    assert.equal(upstreamLib.valueColorFor('Low', 0, 4, false, false, false, 'follow', true), '#3b82f6');
+    assert.equal(upstreamLib.valueColorFor('Medium', 1, 4, false, false, false, 'follow', true), '#1d4ed8');
+    assert.equal(upstreamLib.valueColorFor('High', 2, 4, false, false, false, 'follow', true), '#9333ea');
+    assert.equal(upstreamLib.valueColorFor('Extra', 3, 4, true, false, false, 'follow', true), '#5b21b6');
+
+    const lowVis = upstreamLib.geminiVisualFor(0, levels.map((e) => ({ effort: e, label: e })), false, false);
+    const medVis = upstreamLib.geminiVisualFor(1 / 3, levels.map((e) => ({ effort: e, label: e })), false, false);
+    const highVis = upstreamLib.geminiVisualFor(2 / 3, levels.map((e) => ({ effort: e, label: e })), false, false);
+    const xhighVis = upstreamLib.geminiVisualFor(1, levels.map((e) => ({ effort: e, label: e })), false, false);
+    assert.ok(lowVis.fillBg.includes('rgba(147,197,253,0)') && lowVis.fillBg.includes('rgb(59,130,246)'), 'Low must be airy left-transparent light blue');
+    assert.ok(medVis.fillBg.includes('rgb(37,99,235)') && medVis.fillBg.includes('rgb(30,58,138)'), 'Medium must be deeper sapphire blue');
+    assert.ok(highVis.fillBg.includes('rgb(124,58,237)') && highVis.fillBg.includes('rgb(109,40,217)'), 'High must be vivid purple');
+    assert.ok(xhighVis.fillBg.includes('rgb(109,40,217)') && xhighVis.fillBg.includes('rgb(59,7,100)'), 'Extra High must be deeper cosmic purple');
+    assert.equal(medVis.r[3], 'rgb(30,58,138)', 'Medium star rim must stay sapphire blue (not purple)');
+    assert.equal(xhighVis.r[3], 'rgb(59,7,100)', 'Extra High star rim must be deep cosmic purple');
+
+    curEffort = 'medium';
+    m.refresh();
+    assert.ok(track.style.getPropertyValue('--ces-fill-bg').includes('rgb(29,78,216)') || track.style.getPropertyValue('--ces-fill-bg').includes('rgb(30,58,138)'), 'Medium track fill must be deep sapphire blue');
+
+    curEffort = 'xhigh';
+    m.refresh();
+    assert.ok(track.style.getPropertyValue('--ces-fill-bg').includes('rgb(91,33,182)') || track.style.getPropertyValue('--ces-fill-bg').includes('rgb(59,7,100)'), 'Extra High track fill must be deep cosmic purple');
+
+    // Switching to Claude clears gemini brand cleanly
+    curModel = 'Claude Opus 5.5';
+    m.refresh();
+    assert.equal(root.getAttribute('data-theme'), 'claude');
+    assert.equal(root.hasAttribute('data-ces-brand'), false, 'Claude model must not keep data-ces-brand=gemini');
+    m.unmount();
+
+    // Bundled cdp.js syncTriggerColor override must also forward isGemini to valueColorFor
+    const cdpSrc = fs.readFileSync(path.join(ROOT, 'cdp.js'), 'utf8');
+    assert.ok(cdpSrc.includes('isGeminiModel(tx)') && cdpSrc.includes('resolvePrismAccentTone(d,null),ig)'), 'cdp.js bundled syncTriggerColor must detect Gemini and pass isGemini to valueColorFor');
+  } finally {
+    globalThis.document = prevDoc;
+  }
+});
+
+test('Model picker open/close spring-bloom CSS and Effort<->Models View Transition directional morph with cleanup & reduced-motion guards', async () => {
+  const css = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8');
+  assert.ok(css.includes('--_oy:10px;--_ox:50%;--_ob:100%;transform-origin:var(--_ox) var(--_ob) !important;'), 'Popover must anchor transform-origin to trigger side/align');
+  assert.ok(css.includes('@keyframes ag-m{from{transform:translate3d(0,var(--_oy,10px),0) scale(.92);}}'), 'Popover entry keyframe must lift and scale smoothly');
+  assert.ok(css.includes('@starting-style{.agy-overlay:is([data-ag-cs-model-overlay="1"],[data-ces-ov]){opacity:0;transform:translate3d(0,var(--_oy,10px),0) scale(.92);}}'), 'Popover must provide top-level @starting-style entry state');
+  assert.ok(css.includes('animation:ag-m 235ms var(--ag-ease-out) both,ag-cs-subtle-in 150ms ease-out both;animation:ag-m 250ms linear(0,.38 14%,1.032 46%,.994 72%,1) both,ag-cs-subtle-in 150ms ease-out both;'), 'Popover entry must decouple spring linear() transform from ease-out opacity with cubic-bezier fallback');
+  assert.ok(css.includes('::view-transition-group(cm){animation-duration:240ms;animation-timing-function:cubic-bezier(.22,1,.36,1);overflow:clip;'), 'Effort<->Models card morph must use GPU View Transition group without squashing');
+  assert.ok(css.includes('html:active-view-transition-type(cf,cb)::view-transition-old(cm)') && css.includes('html:active-view-transition-type(cf,cb)::view-transition-new(cm)'), 'View Transition must bind directional forward/backward types');
+  assert.ok(css.includes('@media (prefers-reduced-motion:reduce){html[data-ag-cs-style]{--_sa:none;}@starting-style{.agy-overlay:is([data-ag-cs-model-overlay="1"],[data-ces-ov]){transform:none;}}::view-transition-group(cm),::view-transition-old(cm),::view-transition-new(cm){animation:none !important;}'), 'Reduced motion must disable popover spatial travel and View Transition animations');
+
+  const env = createSimEnv();
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  globalThis.document = env.doc;
+  globalThis.window = env.win;
+  try {
+    const models = [
+      { label: 'Gemini 4 Neon (Low)', model: 'MODEL_GEMINI_4_NEON_LOW', value: 'g4n-low' },
+      { label: 'Gemini 4 Neon (High)', model: 'MODEL_GEMINI_4_NEON_HIGH', value: 'g4n-high' },
+      { label: 'Claude Opus 5.5 (Low)', model: 'MODEL_CLAUDE_OPUS_55_LOW', value: 'c55-low' },
+      { label: 'Claude Opus 5.5 (High)', model: 'MODEL_CLAUDE_OPUS_55_HIGH', value: 'c55-high' },
+    ];
+    let selectedModel = models[1];
+    const selectorCtx = {
+      modelOptions: models,
+      effortIndex: new Map([
+        ['Gemini 4 Neon', [models[0], models[1]]],
+        ['Claude Opus 5.5', [models[2], models[3]]],
+      ]),
+    };
+    const popoverProps = {
+      selectedModel,
+      onModelChange(m) { selectedModel = m; popoverProps.selectedModel = m; },
+    };
+    const globalModelCtx = {
+      setGlobalModel(m) { selectedModel = m; popoverProps.selectedModel = m; },
+    };
+    const trigger = env.makeTrigger('Gemini 4 Neon', 'High');
+    env.body.appendChild(trigger);
+    const pos = env.makeEl('div', { attrs: { role: 'presentation' } });
+    pos.style.transform = 'translate(508px, 711px)';
+    const overlay = env.makeEl('div', { className: 'agy-overlay', attrs: { 'data-side': 'top', 'data-align': 'start' } });
+    const { panel, listWrap } = env.makePanel();
+    overlay.getBoundingClientRect = () => (panel.getAttribute('data-ces-view') === 'models'
+      ? { left: 508, right: 828, top: 711, bottom: 1099, width: 320, height: 388 }
+      : { left: 508, right: 819, top: 711, bottom: 806, width: 311, height: 95 });
+    env.addGroupRow(listWrap, 'Gemini 4 Neon', 'High');
+    env.addGroupRow(listWrap, 'Claude Opus 5.5', 'High');
+    overlay.appendChild(panel);
+    pos.appendChild(overlay);
+    env.body.appendChild(pos);
+    env.attachFiberChain(panel, { selectorCtx, popoverProps, convId: 'conv-vt', globalModelCtx });
+
+    const vtCalls = [];
+    let skippedCount = 0;
+    let resolveFin = null;
+    env.doc.startViewTransition = (arg) => {
+      const rec = {
+        types: arg.types,
+        ovName: overlay.style.viewTransitionName,
+        rootName: env.html.style.viewTransitionName,
+        cvAttr: env.html.getAttribute('data-cv'),
+      };
+      vtCalls.push(rec);
+      const upd = arg.update();
+      assert.equal(upd, undefined, 'View Transition update must be synchronous (never await rAF which deadlocks Chromium VT)');
+      const finished = new Promise((r) => { resolveFin = r; });
+      return {
+        updateCallbackDone: Promise.resolve(),
+        finished,
+        skipTransition() { skippedCount++; resolveFin && resolveFin(); },
+      };
+    };
+
+    const obs = upstreamLib.installAntigravityObserver({ document: env.doc, window: env.win, panelLayout: 'codex' });
+    obs.rescan();
+    // Initial open must NOT trigger View Transition (popover bloom handles open)
+    assert.equal(vtCalls.length, 0, 'Initial mount to effort view must not run View Transition');
+    assert.equal(panel.getAttribute('data-ces-view'), 'effort');
+
+    // Effort -> Models triggers forward View Transition ('cf') with root isolation & sync bottom-anchor compensation
+    panel.querySelector('.ces-cx-model-btn').dispatchEvent({ type: 'click', bubbles: true, detail: 1 });
+    assert.equal(vtCalls.length, 1);
+    assert.deepEqual(vtCalls[0].types, ['cf']);
+    assert.equal(vtCalls[0].ovName, 'cm');
+    assert.equal(vtCalls[0].rootName, 'none');
+    assert.equal(vtCalls[0].cvAttr, 't');
+    assert.equal(pos.style.transform, 'translate(508.0px,418.0px)', 'Sync Floating-UI compensation must keep bottom edge locked during VT');
+    assert.equal(panel.getAttribute('data-ces-view'), 'models');
+    assert.equal(panel.getAttribute('data-cd'), 'f');
+    resolveFin();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(overlay.style.viewTransitionName, '', 'Finished View Transition must clear overlay viewTransitionName');
+    assert.equal(env.html.hasAttribute('data-cv'), false, 'Finished View Transition must clear data-cv');
+
+    // Models -> Effort triggers backward View Transition ('cb'); unmount skips in-flight transition cleanly
+    panel.querySelector('.ces-cx-back').dispatchEvent({ type: 'click', bubbles: true, detail: 1 });
+    assert.equal(vtCalls.length, 2);
+    assert.deepEqual(vtCalls[1].types, ['cb']);
+    assert.equal(panel.getAttribute('data-ces-view'), 'effort');
+    assert.equal(panel.getAttribute('data-cd'), 'b');
+
+    // Removing panel mid-transition skips active View Transition and cleans attrs
+    pos.remove();
+    obs.rescan();
+    assert.equal(skippedCount, 1, 'Unmounting panel mid-transition must call skipTransition()');
+    assert.equal(env.html.hasAttribute('data-cv'), false);
+
+    obs.stop();
+  } finally {
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+  }
 });

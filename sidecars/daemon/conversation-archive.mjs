@@ -31,6 +31,8 @@ const RUNNING_STATUS_RE = /RUNNING|IN_PROGRESS|GENERATING|ACTIVE/i;
 const INDEX_FILENAME = '.last-catalog-index.json';
 const LAST_ARCHIVE_RESULT_FILENAME = '.last-archive-result.json';
 const ACTIVE_ARCHIVE_TASK_FILENAME = '.archive-task-active.json';
+const ARCHIVE_QUEUE_PREFIX = '.archive-queue-';
+const WATCHER_CAPS_FILENAME = '.watch.caps.json';
 export const WARN_TOTAL_MB = 1536;
 export const WARN_SUBAGENT_MB = 512;
 export const WARN_LS_MEMORY_MB = 4096;
@@ -516,6 +518,7 @@ export function parseWindowsTasklistCsvDetailed(
   csvText,
   {
     selfPid = process.pid,
+    excludePids = null,
     queryCommandLines = null,
     resolveAgyCommandLines = null,
     onLiveAgyPids = null,
@@ -526,6 +529,14 @@ export function parseWindowsTasklistCsvDetailed(
   const text = String(csvText || '').trim();
   if (!text) {
     return { running: true, blockers: [{ imageName: '<empty-tasklist>', pid: 0 }], ignoredAcp: [] };
+  }
+  const excludedSet = new Set();
+  if (Number.isInteger(selfPid) && selfPid > 0) excludedSet.add(selfPid);
+  if (excludePids && typeof excludePids[Symbol.iterator] === 'function') {
+    for (const rawPid of excludePids) {
+      const n = Number(rawPid);
+      if (Number.isInteger(n) && n > 0) excludedSet.add(n);
+    }
   }
   let parsedCount = 0;
   const hardBlockers = [];
@@ -538,13 +549,8 @@ export function parseWindowsTasklistCsvDetailed(
     parsedCount++;
     const imageName = m[1];
     const pid = Number(m[2]);
-    // 当无全局 node 而以 Antigravity.exe (ELECTRON_RUN_AS_NODE=1) 运行离线归档脚本时，排除自身 PID，绝不排除 language_server
-    if (
-      Number.isInteger(selfPid) &&
-      selfPid > 0 &&
-      pid === selfPid &&
-      !WIN_LS_ONLY_PROCESS_RE.test(imageName)
-    ) {
+    // 当无全局 node 而以 Antigravity.exe (ELECTRON_RUN_AS_NODE=1) 运行离线归档脚本或外部独立 Daemon 时，排除自身/已知非宿主 PID，绝不排除 language_server
+    if (excludedSet.has(pid) && !WIN_LS_ONLY_PROCESS_RE.test(imageName)) {
       continue;
     }
     if (WIN_HOST_PROCESS_RE.test(imageName)) {
@@ -662,6 +668,7 @@ export function inspectLanguageServerProcesses({
   exec = execFileSync,
   selfPid = process.pid,
   selfPpid = process.ppid,
+  excludePids = null,
   queryCommandLines = undefined,
   resolveAgyCommandLines = undefined,
   defaultGeminiDir = path.join(os.homedir(), '.gemini'),
@@ -688,6 +695,7 @@ export function inspectLanguageServerProcesses({
         : null;
       return parseWindowsTasklistCsvDetailed(out, {
         selfPid,
+        excludePids,
         queryCommandLines: cachedResolver,
         onLiveAgyPids,
         defaultGeminiDir,
@@ -2384,6 +2392,87 @@ export function writeActiveArchiveTask(archiveDir = getDefaultArchiveDir(), info
   }
 }
 
+function isPidAliveBasic(pid) {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return false;
+  try {
+    process.kill(n, 0);
+    return true;
+  } catch (err) {
+    return Boolean(err && err.code === 'EPERM');
+  }
+}
+
+export function pruneStaleActiveArchiveTask(
+  archiveDir = getDefaultArchiveDir(),
+  { now = Date.now(), minStaleAgeMs = 30000, isPidAliveFn = isPidAliveBasic } = {}
+) {
+  try {
+    const filePath = path.join(path.resolve(archiveDir), ACTIVE_ARCHIVE_TASK_FILENAME);
+    const st = assertPathChainNoSymlinks(filePath, 'active archive task');
+    if (!st || !st.isFile()) return { pruned: false, reason: 'missing' };
+    if (st.size > 64 * 1024) {
+      fs.unlinkSync(filePath);
+      return { pruned: true, reason: 'oversized', pid: 0 };
+    }
+    let parsed = null;
+    try {
+      parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch {}
+    const pid = Number(parsed?.pid || 0);
+    const startedMs = parsed?.startedAt ? Date.parse(parsed.startedAt) : st.mtimeMs;
+    const ageMs = Number.isFinite(startedMs) ? Math.max(0, now - startedMs) : Math.max(0, now - st.mtimeMs);
+    if (Number.isInteger(pid) && pid > 0 && isPidAliveFn(pid)) {
+      return { pruned: false, reason: 'alive', pid };
+    }
+    if (ageMs < Math.max(0, Number(minStaleAgeMs) || 0)) {
+      return { pruned: false, reason: 'too-fresh', pid };
+    }
+    fs.unlinkSync(filePath);
+    return { pruned: true, reason: 'dead-pid', pid };
+  } catch {
+    return { pruned: false, reason: 'error' };
+  }
+}
+
+export function findLiveWatcherQueueOwner({
+  platform = process.platform,
+  env = process.env,
+  homeDir = os.homedir(),
+  capsPaths = null,
+  isPidAliveFn = isPidAliveBasic,
+} = {}) {
+  if (platform !== 'win32') return null;
+  let candidates;
+  if (Array.isArray(capsPaths) && capsPaths.length > 0) {
+    candidates = capsPaths;
+  } else {
+    const localAppData =
+      typeof env?.LOCALAPPDATA === 'string' && env.LOCALAPPDATA.trim()
+        ? env.LOCALAPPDATA.trim()
+        : path.join(homeDir, 'AppData', 'Local');
+    candidates = [
+      path.join(localAppData, 'obsidian-prism', WATCHER_CAPS_FILENAME),
+      path.join(localAppData, 'antigravity-claude-style', WATCHER_CAPS_FILENAME),
+    ];
+  }
+  for (const rawPath of candidates) {
+    if (!rawPath) continue;
+    try {
+      const resolved = path.resolve(String(rawPath));
+      const st = assertPathChainNoSymlinks(resolved, 'watcher caps');
+      if (!st || !st.isFile() || st.size <= 0 || st.size > 16 * 1024) continue;
+      const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+      const pid = Number(parsed?.pid || 0);
+      const ver = Number(parsed?.archiveTaskQueue || 0);
+      if (Number.isInteger(pid) && pid > 0 && ver >= 1 && isPidAliveFn(pid)) {
+        return { pid, archiveTaskQueue: ver, capsPath: resolved };
+      }
+    } catch {}
+  }
+  return null;
+}
+
 export function clearActiveArchiveTask(archiveDir = getDefaultArchiveDir(), expectedPid = 0) {
   try {
     const filePath = path.join(path.resolve(archiveDir), ACTIVE_ARCHIVE_TASK_FILENAME);
@@ -2927,6 +3016,9 @@ export async function executeArchiveTaskSequence(task = {}, hooks = {}) {
   const convDir = task.convDir ? path.resolve(String(task.convDir)) : getDefaultConversationsDir();
   const archiveDir = task.archiveDir ? path.resolve(String(task.archiveDir)) : getDefaultArchiveDir();
   const hostPid = Number(task.hostPid) || 0;
+  const daemonPid = Number(task.daemonPid) || 0;
+  const excludePids =
+    Number.isInteger(daemonPid) && daemonPid > 0 && daemonPid !== hostPid ? [daemonPid] : null;
   const cdpPort = normalizeLoopbackCdpPort(task.cdpPort);
   const expectedBrowserWsPath = normalizeExpectedBrowserWsPath(task.cdpBrowserWsPath);
   const exePath = String(task.exePath || '').trim();
@@ -2948,7 +3040,7 @@ export async function executeArchiveTaskSequence(task = {}, hooks = {}) {
         lastInspect = { running: r, blockers: r ? [{ imageName: 'custom-hook', pid: 0 }] : [], ignoredAcp: [] };
         return r;
       }
-      lastInspect = inspectLanguageServerProcesses({ platform: targetPlatform });
+      lastInspect = inspectLanguageServerProcesses({ platform: targetPlatform, excludePids });
       return Boolean(lastInspect.running);
     } catch {
       lastInspect = { running: true, blockers: [{ imageName: 'exception', pid: 0 }], ignoredAcp: [] };
@@ -3273,6 +3365,9 @@ export function spawnDetachedArchiveTask(task = {}, opts = {}) {
     convDir: path.resolve(task.convDir || getDefaultConversationsDir()),
     archiveDir,
     hostPid: Number(task.hostPid) || 0,
+    ...(Number.isInteger(Number(task.daemonPid)) && Number(task.daemonPid) > 0
+      ? { daemonPid: Number(task.daemonPid) }
+      : {}),
     cdpPort: normalizeLoopbackCdpPort(task.cdpPort),
     cdpBrowserWsPath: normalizeExpectedBrowserWsPath(task.cdpBrowserWsPath),
     exePath: String(task.exePath || '').trim(),
@@ -3282,6 +3377,12 @@ export function spawnDetachedArchiveTask(task = {}, opts = {}) {
     subagentMaxAgeHours: Number.isFinite(Number(task.subagentMaxAgeHours))
       ? Number(task.subagentMaxAgeHours)
       : AUTO_ARCHIVE_SUBAGENT_MAX_AGE_HOURS,
+    mainMaxAgeDays: Number.isFinite(Number(task.mainMaxAgeDays))
+      ? Number(task.mainMaxAgeDays)
+      : DEFAULT_MAIN_MAX_AGE_DAYS,
+    keepRecentMain: Number.isInteger(Number(task.keepRecentMain))
+      ? Number(task.keepRecentMain)
+      : DEFAULT_KEEP_RECENT_MAIN,
     batchName: String(task.batchName || 'latest'),
     settleMs: Number.isFinite(Number(task.settleMs)) ? Number(task.settleMs) : 4000,
     waitExitTimeoutMs: Number.isFinite(Number(task.waitExitTimeoutMs)) ? Number(task.waitExitTimeoutMs) : 45000,
@@ -3289,6 +3390,36 @@ export function spawnDetachedArchiveTask(task = {}, opts = {}) {
       ? { appStoragePath: path.resolve(task.appStoragePath.trim()) }
       : {}),
   };
+
+  // Windows 下优先交由独立常驻、位于宿主 Job Object 之外的 obsidian-prism-watcher 队列接管，
+  // 彻底杜绝 Antigravity/language_server 退出关闭 Job Object 时连坐强杀归档/重启子进程。
+  const canUseWatcherQueue =
+    targetPlatform === 'win32' &&
+    typeof opts.spawnHook !== 'function' &&
+    typeof opts.spawnFn !== 'function' &&
+    opts.disableWatcherQueue !== true;
+  if (canUseWatcherQueue) {
+    const watcherOwner = findLiveWatcherQueueOwner({
+      platform: targetPlatform,
+      env: opts.env && typeof opts.env === 'object' ? opts.env : process.env,
+      homeDir: opts.homeDir || os.homedir(),
+      capsPaths: opts.watcherCapsPaths || null,
+      isPidAliveFn: typeof opts.isPidAliveFn === 'function' ? opts.isPidAliveFn : isPidAliveBasic,
+    });
+    if (watcherOwner) {
+      const queueFile = path.join(archiveDir, `${ARCHIVE_QUEUE_PREFIX}${crypto.randomBytes(6).toString('hex')}.json`);
+      atomicWriteJsonSync(queueFile, safePayload);
+      writeActiveArchiveTask(archiveDir, { action: safePayload.action, pid: watcherOwner.pid });
+      return {
+        spawned: true,
+        pid: watcherOwner.pid,
+        method: 'watcher-queue',
+        useElectronAsNode: false,
+        taskFile: queueFile,
+      };
+    }
+  }
+
   atomicWriteJsonSync(taskFile, safePayload);
 
   if (typeof opts.spawnHook === 'function') {

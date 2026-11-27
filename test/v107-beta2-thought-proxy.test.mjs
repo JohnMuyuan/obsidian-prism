@@ -3335,3 +3335,110 @@ test('18) Red-team #256 [P1 #7]: composeAbortSignal uses managed ref-d timeout a
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('thought-client translates English mid-turn assistant prose overlays (preserving inline code), custom tool-group headers, and step-plan items while skipping Chinese replies and code blocks', async () => {
+  const clientSrc = fs.readFileSync(path.join(ROOT_DIR, 'vendor', 'thought-translator', 'thought-client.js'), 'utf8');
+  const proseCalls = [];
+  const batchCalls = [];
+  const { doc, docEl, rootBody, sandbox } = createMockDomEnv({
+    __agPrismThoughtBridge: {
+      call: async ({ action }) =>
+        action === 'get-cache' ? { ok: true, stylePreset: 'technical', translateToolSummaries: true, entries: {} } : { ok: true },
+      translateStream: async (opts) => {
+        if (String(opts.mode || '').startsWith('tool-batch:')) {
+          const parsed = JSON.parse(opts.text);
+          batchCalls.push(parsed.items);
+          return { ok: true, items: parsed.items.map((s) => `译:${s}`) };
+        }
+        proseCalls.push(opts.text);
+        return { ok: true, text: '我正在运行针对性测试套件（`host-i18n`）并准备部署。', engine: 'ai' };
+      },
+      cancelTranslate: async () => ({ ok: true }),
+    },
+  });
+  docEl.setAttribute('data-ag-cs-lang', 'zh-CN');
+  vm.runInNewContext(clientSrc, sandbox);
+  const api = sandbox.__agPrismThought;
+
+  try {
+    const conv = doc.createElement('div', { 'data-testid': 'conversation-view' });
+    const resp = doc.createElement('div', { 'data-testid': 'agent-response' });
+
+    // 1. Custom English tool-group-collapsible header (with elapsed span that must stay untouched)
+    const tg = doc.createElement('button', { 'data-testid': 'tool-group-collapsible', 'aria-expanded': 'false' });
+    const tgLabel = doc.createElement('span');
+    tgLabel.textContent = 'Diagnosing liftoff ripple and UI labels';
+    const tgElapsed = doc.createElement('span', { 'data-testid': 'tool-group-elapsed' });
+    tgElapsed.textContent = '4m 40s';
+    tg.appendChild(tgLabel);
+    tg.appendChild(tgElapsed);
+
+    // 2. English step-plan-item with sr-only status
+    const spItem = doc.createElement('li', { 'data-testid': 'step-plan-item' });
+    const spText = doc.createElement('span');
+    spText.textContent = 'Run full test suite and deploy plugin';
+    const spSr = doc.createElement('span', { class: 'sr-only' });
+    spSr.textContent = 'In progress';
+    spItem.appendChild(spText);
+    spItem.appendChild(spSr);
+
+    // 3. English mid-turn assistant prose block with inline <code>
+    const enMd = doc.createElement('div', { 'data-markdown-root': '' });
+    const enP = doc.createElement('p');
+    enP.appendChild(doc.createTextNode('I am running the targeted test suites ('));
+    const codeSpan = doc.createElement('code');
+    codeSpan.textContent = 'host-i18n';
+    enP.appendChild(codeSpan);
+    enP.appendChild(doc.createTextNode(') and will deploy once they finish.'));
+    enMd.appendChild(enP);
+
+    // 4. Already-Chinese assistant reply (must NEVER be translated)
+    const zhMd = doc.createElement('div', { 'data-markdown-root': '' });
+    const zhP = doc.createElement('p');
+    zhP.textContent = '已全部处理完成并热部署到当前 Antigravity 窗口，针对性测试 host-i18n 与 style.css 全部通过。';
+    zhMd.appendChild(zhP);
+
+    // 5. English block containing <pre> code block (must stay native)
+    const preMd = doc.createElement('div', { 'data-markdown-root': '' });
+    const preP = doc.createElement('p');
+    preP.textContent = 'Here is the configuration snippet you should inspect carefully:';
+    const preBlock = doc.createElement('pre');
+    preBlock.textContent = 'const x = 1;';
+    preMd.appendChild(preP);
+    preMd.appendChild(preBlock);
+
+    resp.appendChild(tg);
+    resp.appendChild(spItem);
+    resp.appendChild(enMd);
+    resp.appendChild(zhMd);
+    resp.appendChild(preMd);
+    conv.appendChild(resp);
+    rootBody.appendChild(conv);
+
+    api.sync({ thoughtTranslate: 'ai', thoughtTrigger: 'preload', translateToolSummaries: true });
+    api.scanImmediate();
+    await new Promise((r) => setTimeout(r, 60));
+
+    assert.equal(tgLabel.textContent, '译:Diagnosing liftoff ripple and UI labels');
+    assert.equal(tgElapsed.textContent, '4m 40s', 'tool-group-elapsed must not be sent to AI');
+    assert.equal(spText.textContent, '译:Run full test suite and deploy plugin');
+    assert.equal(spSr.textContent, 'In progress', 'sr-only span must not be sent to AI');
+    assert.equal(proseCalls.length, 1, 'Only English non-pre assistant prose should be sent to AI');
+    assert.ok(proseCalls[0].includes('`host-i18n`'), 'Inline <code> must be wrapped in backticks for AI preservation');
+    assert.equal(enMd.getAttribute('data-op-prose-panel'), '1');
+    assert.equal(enMd.getAttribute('data-op-zh-ready'), '1');
+    assert.ok(enMd.querySelector('.ag-prism-thought-overlay')?.textContent?.includes('我正在运行针对性测试套件'));
+    assert.ok(enMd.querySelector('.ag-prism-thought-code')?.textContent === 'host-i18n');
+    assert.equal(zhMd.getAttribute('data-op-prose-panel'), null, 'Chinese reply must not get prose overlay');
+    assert.equal(preMd.getAttribute('data-op-prose-panel'), null, 'Markdown with <pre> must stay native');
+
+    // Turning off translateToolSummaries cleans up prose overlays losslessly
+    api.setTranslateToolSummaries(false);
+    assert.equal(enMd.getAttribute('data-op-prose-panel'), null);
+    assert.equal(enMd.querySelector('.ag-prism-thought-overlay'), null);
+    assert.equal(tgLabel.textContent, 'Diagnosing liftoff ripple and UI labels');
+    assert.equal(spText.textContent, 'Run full test suite and deploy plugin');
+  } finally {
+    api.destroy();
+  }
+});

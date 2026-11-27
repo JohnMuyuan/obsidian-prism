@@ -526,7 +526,8 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
         .map((b) => b.getAttribute('data-ag-cs-key'))
         .filter(Boolean)
     );
-    assert.equal(settingKeys.size, 38);
+    assert.equal(settingKeys.size, 39);
+    assert.ok(settingKeys.has('effortPanelLayout'), 'Expected effortPanelLayout setting key');
     assert.ok(settingKeys.has('darkAura'), 'Expected darkAura setting key in Appearance panel');
     assert.ok(settingKeys.has('darkAuraStyle'), 'Expected darkAuraStyle setting key in Appearance panel');
     for (const expectedKey of [
@@ -1586,13 +1587,16 @@ test('v3.5.1 mounts dual mascot stage, brand optical glyphs, Orchestrator crysta
     }
     assert.equal(html.getAttribute('data-ag-cs-sidebar-collapsed'), '1');
 
-    // 6. Pulse status bar shadowRoot bridged cleanly with vial rail & toggle button
+    // 6. Pulse status bar shadowRoot bridged cleanly in flat bar mode (physical vial disabled, 0 canvas / 0 vial toggle)
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(sandbox.window.__agClaudeStyle.getState().hasPulseBridge, true);
-    assert.equal(pulseHost.getAttribute('data-pv-mode'), 'vial');
-    assert.equal(ctxCard.getAttribute('data-ag-pulse-vial-mode'), 'vial');
-    assert.ok(shadowRoot.querySelector('[data-ag-pulse-vial-toggle="1"]'));
-    assert.ok(shadowRoot.querySelector('canvas[data-vial-canvas="true"]'));
+    assert.equal(pulseHost.getAttribute('data-pv-mode'), 'bar');
+    assert.equal(ctxCard.getAttribute('data-ag-pulse-vial-mode'), 'bar');
+    assert.equal(ctxCard.getAttribute('data-ag-pulse-card-width'), '304');
+    assert.equal(shadowRoot.querySelector('[data-ag-pulse-vial-toggle="1"]'), null);
+    assert.equal(shadowRoot.querySelector('canvas[data-vial-canvas="true"]'), null);
+    assert.equal(shadowRoot.querySelector('.pv-rail'), null);
+    assert.ok(shadowRoot.querySelector('.pv-bw'), 'Flat 3-segment minibar must mount when vial is disabled');
 
     // 7. Full teardown via REMOVE_EXPRESSION restores host & cleans all v3.5.1 / v3.6 nodes
     vm.runInNewContext(cdp.REMOVE_EXPRESSION, sandbox);
@@ -2455,10 +2459,7 @@ test('v3.7 orchestrates 4-tier motionLevel, Hero A~E optical transitions, dual-t
 
     sandbox.window.__agClaudeStyle.sync();
     const liftoffVeil = body.querySelector('.ag-cs-liftoff-veil');
-    assert.ok(liftoffVeil, 'Expected .ag-cs-liftoff-veil mounted on Hero A liftoff');
-    assert.ok(liftoffVeil.querySelector('.ag-cs-liftoff-ring'));
-    assert.equal(liftoffVeil.style.getPropertyValue('--ag-lift-x'), '760px');
-    assert.equal(liftoffVeil.style.getPropertyValue('--ag-lift-y'), '465px');
+    assert.equal(liftoffVeil, null, 'Expected .ag-cs-liftoff-veil ripple ring disabled on Hero A liftoff');
     assert.equal(firstBubble.getAttribute('data-ag-cs-liftoff-bubble'), '1');
     assert.ok(convInputBox._lastAnim, 'Expected FLIP spring dock animation on bottom agent-input-box');
     const stAfterLiftoff = sandbox.window.__agClaudeStyle.getState();

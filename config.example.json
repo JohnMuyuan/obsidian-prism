@@ -8,6 +8,7 @@
   "targetFps": "180",
   "telemetryModule": "auto",
   "effortSliderModule": "auto",
+  "effortPanelLayout": "codex",
   "effortMemory": "on",
   "periodicModelPicker": "on",
   "thoughtTranslate": "off",
@@ -43,5 +44,6 @@
   "hostLocalization": "auto",
   "autoUpdate": "off",
   "updateChannel": "stable",
-  "autoArchiveOnExit": false
+  "autoArchiveOnExit": false,
+  "inlineDiff": "on"
 }
