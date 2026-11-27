@@ -1665,6 +1665,7 @@
   };
 
   const UPSTREAM_CREDITS = [
+    ['RMvdesi/obsidian-prism', 'GPL-3.0 · RMvdesi (原版仓库 / Original Upstream)'],
     ['0DNANCY/agy-claude-style', 'MIT · 0DNANCY'],
     ['ATtacK030130/antigrative-dashboard', 'MIT · AG Pulse'],
     ['LLYSH-HANNARI/antigravity-Codex-Claude-effort-slider', 'MIT · 月上寒'],
@@ -1678,6 +1679,7 @@
 
   const LICENSE_SUMMARY_TEXT = [
     'GNU General Public License v3.0 (GPL-3.0-only)',
+    'Custom Fork v0.0.1 based on Obsidian Prism by RMvdesi (https://github.com/RMvdesi/obsidian-prism)',
     'Copyright (C) 2026 RMvdesi (https://github.com/RMvdesi/obsidian-prism)',
     '',
     'Obsidian Prism is free and open-source software licensed under GPL-3.0.',
@@ -1977,6 +1979,7 @@
 
     const doc = typeof document !== 'undefined' ? document : null;
     if (!doc) return;
+    const displayVersion = '0.0.1';
     const syncChrome = G.__agPrismHostEnhancer?.syncSettingsDialogChrome;
     if (isFn(syncChrome)) syncChrome(doc, runGuardedMut);
     const lang = getLang();
@@ -2435,7 +2438,7 @@
       const updBadge = mkEl('span', 'ag-cs-update-badge', '');
       sa(updBadge, 'data-ag-cs-update-badge', '1');
       setVis(updBadge, false);
-      ap(foldLeft, brandMark, mkEl('h3', '', brandTitle), mkEl('span', 'ag-cs-settings-ver', `v${version}`), updBadge);
+      ap(foldLeft, brandMark, mkEl('h3', '', brandTitle), mkEl('span', 'ag-cs-settings-ver', `v${displayVersion}`), updBadge);
 
       const chevron = mkEl('span', 'ag-cs-settings-fold-chevron');
       sa(chevron, 'data-ag-cs-chevron');
@@ -2889,7 +2892,7 @@
           };
 
           const repoChip = mkChip(U('aboutRepoSyncTitle', 'Git'), 'data-ag-cs-repo-status');
-          const repoInfo = ap(mkEl('div', 'ag-cs-about-repo-info'), mkEl('span', 'font-medium text-foreground', `Obsidian Prism v${version}`), repoChip);
+          const repoInfo = ap(mkEl('div', 'ag-cs-about-repo-info'), mkEl('span', 'font-medium text-foreground', `Obsidian Prism v${displayVersion}`), repoChip);
           const syncBtn = mkB('ag-cs-repo-sync-btn', U('aboutRepoSyncBtn', 'Sync'), 'data-ag-cs-repo-sync');
           sa(syncBtn, 'data-tone', 'secondary');
 
@@ -2943,7 +2946,7 @@
 
           const updRow = mkEl('div', 'ag-cs-about-repo-row');
           sa(updRow, 'data-ag-cs-update-row', '1');
-          const updChip = mkChip(fmtTpl(U('updUpToDate', 'v{0}'), [version]), 'data-ag-cs-update-status');
+          const updChip = mkChip(fmtTpl(U('updUpToDate', 'v{0}'), [displayVersion]), 'data-ag-cs-update-status');
           const updLinkSlot = mkEl('span', 'ag-cs-update-link-slot');
           const checkUpdBtn = mkB('ag-cs-repo-sync-btn', U('updCheckBtn', 'Check Update'), 'data-ag-cs-update-check');
           const applyUpdBtn = mkB('ag-cs-repo-sync-btn', U('updApplyBtn', 'Update Now'), 'data-ag-cs-update-apply');
@@ -2993,7 +2996,7 @@
               setVis(updBadge, false);
               setVis(applyUpdBtn, false);
               if (st.ok === false && st.error) setChip(updChip, 'error', st.error);
-              else setChip(updChip, 'ok', fmtTpl(u.updUpToDate || 'v{0}', [st.currentVersion || version]));
+              else setChip(updChip, 'ok', fmtTpl(u.updUpToDate || 'v{0}', [displayVersion]));
             });
           };
           applyUpdateViewRef = applyUpdateView;

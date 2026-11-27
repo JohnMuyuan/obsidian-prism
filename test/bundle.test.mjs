@@ -446,7 +446,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     const settingsSec = appearancePanel.querySelector('#ag-cs-settings-sec');
     assert.ok(settingsSec);
     assert.equal(settingsSec.querySelector('h3')?.textContent, 'Obsidian Prism · 黑曜棱镜');
-    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v1.0.8-beta.3');
+    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v0.0.1');
     const brandMarkHtml = settingsSec.querySelector('.ag-cs-settings-brand-mark')?.innerHTML || '';
     assert.ok(
       brandMarkHtml.includes('ag-cs-brand-logo-svg') || brandMarkHtml.includes('ag-cs-settings-brand-svg'),
@@ -488,14 +488,15 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     assert.ok(thoughtCfgBox, 'Expected built-in OpenAI thought translator config card hot-mounted into open settingsSec');
     assert.equal(thoughtCfgBox.hidden, false, 'Thought AI config card should be visible when mode is ai');
 
-    // Verify About section: Git status/sync button + 9 upstream repo external links + GPL-3.0 & upstream MIT notices + Google disclaimer
+    // Verify About section: Git status/sync button + 10 upstream repo external links (incl. original RMvdesi/obsidian-prism) + GPL-3.0 & upstream MIT notices + Google disclaimer
     const aboutBox = settingsSec.querySelector('.ag-cs-about-box');
     assert.ok(aboutBox, 'Expected .ag-cs-about-box inside About group');
     const creditLinks = aboutBox.querySelectorAll('a');
-    assert.equal(creditLinks.length, 9, 'Expected all 9 upstream credited repository links');
+    assert.equal(creditLinks.length, 10, 'Expected all 10 upstream credited repository links including original Obsidian Prism');
     assert.deepEqual(
       creditLinks.map((a) => a.getAttribute('href')),
       [
+        'https://github.com/RMvdesi/obsidian-prism',
         'https://github.com/0DNANCY/agy-claude-style',
         'https://github.com/ATtacK030130/antigrative-dashboard',
         'https://github.com/LLYSH-HANNARI/antigravity-Codex-Claude-effort-slider',
