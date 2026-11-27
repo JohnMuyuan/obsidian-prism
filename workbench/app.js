@@ -83,7 +83,7 @@
     { id: 'low', label: 'Low', short: 'LOW', title: '轻量快速推演', bars: 1 },
     { id: 'medium', label: 'Medium', short: 'MED', title: '均衡常规推理', bars: 2 },
     { id: 'high', label: 'High', short: 'HIGH', title: '深度架构推演', bars: 3, top: true },
-    { id: 'xhigh', label: 'Extra', short: 'EXTRA', title: '高功耗强化推理', bars: 4, spectrum: true },
+    { id: 'xhigh', label: 'Extra High', short: 'EXTRA HIGH', title: '高功耗强化推理', bars: 4, spectrum: true },
   ];
 
   const SESSIONS = [

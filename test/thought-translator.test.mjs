@@ -3774,3 +3774,327 @@ test('On-demand local Ollama lifecycle: lazy single-flight start, external non-i
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('Streaming auto-follow guard, outer-viewport preservation, and thinking CSS prevent upward scroll jumps without fighting user intent', async () => {
+  // 1) CSS contracts in style.css
+  const css = fs.readFileSync(path.join(ROOT_DIR, 'style.css'), 'utf8');
+  const cvLines = css.split('\n').filter((l) => l.includes('content-visibility:auto'));
+  assert.ok(cvLines.length >= 3, 'style.css must preserve all 3 content-visibility:auto rules');
+  for (const l of cvLines) {
+    assert.equal(
+      l.includes('thinking-collapsible-trigger'),
+      false,
+      `thinking-collapsible-trigger must NOT have content-visibility:auto: ${l}`
+    );
+  }
+  assert.ok(
+    /\[data-testid="thinking-collapsible-trigger"\]\[aria-expanded="true"\]\+div\{[^}]*overscroll-behavior-y:contain !important/.test(css),
+    'Expanded thinking panel must enforce overscroll-behavior-y:contain !important'
+  );
+  assert.ok(
+    css.includes('div.flex.items-start:not(:nth-last-child(-n+3)):not([data-ag-cs-bleed="1"]){content-visibility:auto;contain-intrinsic-size:auto 640px;}'),
+    'Latest 3 conversation turns must stay content-visibility:visible and offscreen turns must use 640px intrinsic height'
+  );
+
+  // 2) Full DOM + event simulation for thought-client.js
+  const winListeners = new Map();
+  const rafQueue = [];
+  const cancelledRafs = new Set();
+  let rafSeq = 0;
+  let fakeOffset = 0;
+
+  const env = createMockDomEnv({
+    Date: { now: () => Date.now() + fakeOffset },
+    requestAnimationFrame(fn) {
+      const id = ++rafSeq;
+      rafQueue.push({ id, fn });
+      return id;
+    },
+    cancelAnimationFrame(id) {
+      cancelledRafs.add(id);
+    },
+    addEventListener(ev, fn) {
+      if (!winListeners.has(ev)) winListeners.set(ev, new Set());
+      winListeners.get(ev).add(fn);
+    },
+    removeEventListener(ev, fn) {
+      winListeners.get(ev)?.delete(fn);
+    },
+  });
+
+  function flushRafs() {
+    const batch = rafQueue.splice(0, rafQueue.length);
+    for (const item of batch) {
+      if (!cancelledRafs.has(item.id)) item.fn();
+    }
+  }
+  function dispatchWin(evName, payload = {}) {
+    for (const fn of Array.from(winListeners.get(evName) || [])) {
+      fn({ type: evName, preventDefault() {}, stopPropagation() {}, ...payload });
+    }
+  }
+
+  // Upgrade makeEl nodes with closest() + nextElementSibling/previousElementSibling + compound selector matching
+  function matchSimpleSel(node, rawSel) {
+    if (!node || node.nodeType !== 1) return false;
+    return String(rawSel || '')
+      .split(',')
+      .some((part) => {
+        const s = part.trim();
+        if (!s) return false;
+        const attrs = [...s.matchAll(/\[([^=\]]+)(?:="([^"]*)")?\]/g)];
+        const classes = [...s.matchAll(/\.([A-Za-z0-9_-]+)/g)].map((m) => m[1]);
+        const tagMatch = /^([a-zA-Z0-9]+)/.exec(s);
+        if (tagMatch && node.tagName !== tagMatch[1].toUpperCase()) return false;
+        for (const c of classes) if (!node.classList.contains(c)) return false;
+        for (const [, k, v] of attrs) {
+          if (v === undefined) {
+            if (!node.hasAttribute(k)) return false;
+          } else if (node.getAttribute(k) !== v) {
+            return false;
+          }
+        }
+        return Boolean(tagMatch || classes.length || attrs.length);
+      });
+  }
+  function enhanceEl(el) {
+    Object.defineProperty(el, 'nextElementSibling', {
+      configurable: true,
+      get() {
+        if (!this.parentElement) return null;
+        const idx = this.parentElement.children.indexOf(this);
+        return idx >= 0 ? this.parentElement.children[idx + 1] || null : null;
+      },
+    });
+    Object.defineProperty(el, 'previousElementSibling', {
+      configurable: true,
+      get() {
+        if (!this.parentElement) return null;
+        const idx = this.parentElement.children.indexOf(this);
+        return idx > 0 ? this.parentElement.children[idx - 1] || null : null;
+      },
+    });
+    el.closest = function (sel) {
+      let cur = this;
+      while (cur) {
+        if (matchSimpleSel(cur, sel)) return cur;
+        cur = cur.parentElement;
+      }
+      return null;
+    };
+    const origQsa = el.querySelectorAll.bind(el);
+    el.querySelectorAll = function (sel) {
+      const out = [];
+      const walk = (n) => {
+        for (const ch of n.children || []) {
+          if (matchSimpleSel(ch, sel)) out.push(ch);
+          walk(ch);
+        }
+      };
+      walk(this);
+      return out.length ? out : origQsa(sel);
+    };
+    el.querySelector = function (sel) {
+      return this.querySelectorAll(sel)[0] || null;
+    };
+    return el;
+  }
+
+  const origCreate = env.doc.createElement.bind(env.doc);
+  env.doc.createElement = (tag) => enhanceEl(origCreate(tag));
+  enhanceEl(env.rootBody);
+
+  const conv = env.doc.createElement('div');
+  conv.setAttribute('data-testid', 'conversation-view');
+  const vp = env.doc.createElement('div');
+  vp.setAttribute('data-testid', 'autoscroll-viewport');
+  vp.clientHeight = 600;
+  vp.scrollHeight = 2000;
+  vp.scrollTop = 1400; // pinned at bottom (max = 1400)
+  vp.style.overflowAnchor = 'none';
+  vp._boundingRect = { top: 0, bottom: 600, left: 0, right: 800, width: 800, height: 600 };
+
+  const turn = env.doc.createElement('div');
+  const trigger = env.doc.createElement('button');
+  trigger.setAttribute('data-testid', 'thinking-collapsible-trigger');
+  trigger.setAttribute('aria-expanded', 'true');
+  trigger.textContent = 'Thought for 4s';
+
+  const panel = env.doc.createElement('div');
+  panel.className = 'overflow-y-auto';
+  panel.scrollHeight = 400;
+  panel.clientHeight = 200;
+  panel.scrollTop = 150;
+  panel._boundingRect = { top: 200, bottom: 400, left: 20, right: 620, width: 600, height: 200 };
+  const rawP = env.doc.createElement('p');
+  rawP.textContent = 'Analyzing the viewport jump bug in detail across React auto-scroll and content-visibility rules.';
+  panel.appendChild(rawP);
+
+  // Simulate realistic height shrink when immersive translation hides raw English (sets data-op-zh-ready="1")
+  const origSetAttr = panel.setAttribute.bind(panel);
+  panel.setAttribute = function (k, v) {
+    const prev = this.getAttribute(k);
+    origSetAttr(k, v);
+    if (k === 'data-op-zh-ready' && v === '1' && prev !== '1') {
+      vp.scrollHeight = Math.max(600, vp.scrollHeight - 160);
+    }
+  };
+
+  turn.appendChild(trigger);
+  turn.appendChild(panel);
+  vp.appendChild(turn);
+
+  const cancelBtn = env.doc.createElement('button');
+  cancelBtn.setAttribute('data-testid', 'input-cancel-button');
+  conv.appendChild(vp);
+  conv.appendChild(cancelBtn);
+
+  const navItem = env.doc.createElement('button');
+  navItem.className = 'ag-cs-nav-outline-item';
+  conv.appendChild(navItem);
+
+  const scrollBottomBtn = env.doc.createElement('button');
+  scrollBottomBtn.className = 'agy-scroll-bottom';
+  conv.appendChild(scrollBottomBtn);
+  env.rootBody.appendChild(conv);
+
+  // Wire mock translation bridge that resolves synchronously on demand
+  let resolveTranslate = null;
+  env.sandbox.__agPrismThoughtBridge = {
+    call: async () => ({ ok: true, entries: {} }),
+    translateStream: () =>
+      new Promise((resolve) => {
+        resolveTranslate = resolve;
+      }),
+  };
+
+  const clientSrc = fs.readFileSync(path.join(ROOT_DIR, 'vendor', 'thought-translator', 'thought-client.js'), 'utf8');
+  vm.runInNewContext(clientSrc, env.sandbox);
+  const api = env.sandbox.__agPrismThought;
+  assert.ok(api, 'thought-client API must mount');
+
+  api.sync({ thoughtTranslate: 'ai', thoughtTrigger: 'preload', thoughtView: 'immersive', language: 'zh-CN' });
+  assert.equal(api.getFollowGuardStats().bound, true, 'Follow guard must bind on window when active');
+  assert.equal(api.getFollowGuardStats().healCount, 0);
+
+  // 2a) preserveOuterViewportAround keeps outer viewport pinned at nextMax when translation finishes & shrinks panel
+  api.scanImmediate();
+  fakeOffset += 1000;
+  api.scanImmediate();
+  await waitUntil(() => typeof resolveTranslate === 'function', 1200);
+  assert.equal(typeof resolveTranslate, 'function', 'translateStream must be invoked after settle gate');
+  resolveTranslate({ ok: true, text: '正在深入分析视口跳转问题的根因。', key: 'ai_technical_mock' });
+  await waitUntil(() => {
+    flushRafs();
+    return panel.getAttribute('data-op-zh-ready') === '1';
+  }, 1000);
+  assert.equal(vp.scrollHeight, 1840, 'Mock translation commit must shrink scrollHeight by 160px');
+  assert.equal(vp.scrollTop, 1240, 'preserveOuterViewportAround must keep pinned viewport at nextMax (1840 - 600)');
+
+  // 2b) Non-user upward jump / AutoScroll disconnect during active run gets healed on rAF
+  vp.scrollHeight = 2200; // max = 1600
+  vp.scrollTop = 900; // simulated thinking collapse + layout drift upward by 700px without user input
+  vp.style.overflowAnchor = 'auto'; // simulated Antigravity FX AutoScroll disconnecting
+  dispatchWin('scroll', { target: vp });
+  flushRafs();
+  assert.equal(vp.scrollTop, 1600, 'Follow guard must heal non-user upward drop during active run back to maxScroll');
+  assert.equal(api.getFollowGuardStats().healCount, 1);
+
+  // 2c) Wheel-up INSIDE expanded thinking panel must NOT detach outer viewport
+  dispatchWin('wheel', { target: rawP, deltaY: -120 });
+  fakeOffset += 600;
+  vp.scrollHeight = 2400; // max = 1800
+  vp.scrollTop = 1200;
+  vp.style.overflowAnchor = 'auto';
+  dispatchWin('scroll', { target: vp });
+  flushRafs();
+  assert.equal(vp.scrollTop, 1800, 'Wheel inside expanded thinking panel must not detach outer auto-follow');
+  assert.equal(api.getFollowGuardStats().healCount, 2);
+
+  // 2d) Real user wheel-up on outer conversation MUST detach immediately and NEVER be fought
+  dispatchWin('wheel', { target: turn, deltaY: -120 });
+  vp.scrollTop = 1100;
+  dispatchWin('scroll', { target: vp });
+  fakeOffset += 800; // even after grace window expires, detached flag remains respected
+  vp.scrollHeight = 2700; // new streaming tokens arrive below
+  dispatchWin('scroll', { target: vp });
+  flushRafs();
+  assert.equal(vp.scrollTop, 1100, 'Follow guard must NEVER pull user back down after intentional wheel-up');
+  assert.equal(api.getFollowGuardStats().healCount, 2);
+
+  // 2e) Clicking Scroll-to-Bottom re-engages auto-follow cleanly
+  dispatchWin('click', { target: scrollBottomBtn });
+  vp.scrollTop = 2100; // at max (2700 - 600)
+  fakeOffset += 600;
+  vp.scrollHeight = 2900; // max = 2300
+  vp.scrollTop = 1500; // non-user drop again
+  dispatchWin('scroll', { target: vp });
+  flushRafs();
+  assert.equal(vp.scrollTop, 2300, 'Follow guard must resume healing after user returns to bottom');
+  assert.equal(api.getFollowGuardStats().healCount, 3);
+
+  // 2f) Clicking navigator turn item detaches immediately
+  dispatchWin('click', { target: navItem });
+  vp.scrollTop = 300;
+  fakeOffset += 800;
+  vp.scrollHeight = 3100;
+  dispatchWin('scroll', { target: vp });
+  flushRafs();
+  assert.equal(vp.scrollTop, 300, 'Follow guard must respect navigator jump click');
+  assert.equal(api.getFollowGuardStats().healCount, 3);
+
+  // 2g) Above-fold panel shrinking while user is scrolled up compensates vp.scrollTop cleanly
+  const panelAbove = env.doc.createElement('div');
+  panelAbove._boundingRect = { top: -300, bottom: -100, left: 20, right: 620, width: 600, height: 200 };
+  const trigAbove = env.doc.createElement('button');
+  trigAbove.setAttribute('data-testid', 'thinking-collapsible-trigger');
+  trigAbove.setAttribute('aria-expanded', 'true');
+  trigAbove.textContent = 'Thought for 2s';
+  const rawAbove = env.doc.createElement('p');
+  rawAbove.textContent = 'Earlier thinking block above the current reading position.';
+  panelAbove.appendChild(rawAbove);
+  const origAboveSetAttr = panelAbove.setAttribute.bind(panelAbove);
+  panelAbove.setAttribute = function (k, v) {
+    const prev = this.getAttribute(k);
+    origAboveSetAttr(k, v);
+    if (k === 'data-op-zh-ready' && v === '1' && prev !== '1') {
+      vp.scrollHeight -= 120;
+    }
+  };
+  turn.appendChild(trigAbove);
+  turn.appendChild(panelAbove);
+  vp.scrollTop = 900;
+  resolveTranslate = null;
+  api.scanImmediate();
+  fakeOffset += 1000;
+  api.scanImmediate();
+  await waitUntil(() => typeof resolveTranslate === 'function', 1000);
+  assert.equal(typeof resolveTranslate, 'function', 'Above-fold panel must trigger translateStream');
+  resolveTranslate({ ok: true, text: '上方更早的一段思考链译文。', key: 'ai_technical_mock_2' });
+  await waitUntil(() => {
+    flushRafs();
+    return panelAbove.getAttribute('data-op-zh-ready') === '1';
+  }, 1000);
+  assert.equal(
+    panelAbove.getAttribute('data-op-zh-ready'),
+    '1',
+    `panelAbove must commit ready (pending=${panelAbove.getAttribute('data-op-zh-pending')}, failed=${panelAbove.getAttribute('data-op-zh-failed')}, sh=${vp.scrollHeight}, rafQ=${rafQueue.length})`
+  );
+  assert.equal(vp.scrollTop, 780, 'Above-fold shrink of 120px must compensate scrollTop from 900 to 780');
+
+  // 2h) destroy() cleanly unbinds every window listener and cancels pending rAFs
+  vp.scrollHeight = 3300;
+  vp.scrollTop = 2700;
+  dispatchWin('click', { target: scrollBottomBtn });
+  fakeOffset += 600;
+  vp.scrollTop = 2000;
+  dispatchWin('scroll', { target: vp }); // queues a rAF
+  assert.ok(rafQueue.length > 0, 'Pending heal rAF should be queued before destroy');
+  const queuedId = rafQueue[rafQueue.length - 1].id;
+  api.destroy();
+  assert.equal(api.getFollowGuardStats().bound, false, 'destroy() must unbind follow guard');
+  assert.equal(cancelledRafs.has(queuedId), true, 'destroy() must cancel pending heal rAF');
+  for (const [ev, set] of winListeners.entries()) {
+    assert.equal(set.size, 0, `destroy() must remove all window "${ev}" listeners`);
+  }
+});

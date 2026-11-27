@@ -1665,7 +1665,7 @@
   };
 
   const UPSTREAM_CREDITS = [
-    ['RMvdesi/obsidian-prism', 'GPL-3.0 · RMvdesi (原版仓库 / Original Upstream)'],
+    ['RMvdesi/obsidian-prism', 'GPL-3.0 · RMvdesi (Original Upstream)', 'GPL-3.0 · RMvdesi (原版仓库)'],
     ['0DNANCY/agy-claude-style', 'MIT · 0DNANCY'],
     ['ATtacK030130/antigrative-dashboard', 'MIT · AG Pulse'],
     ['LLYSH-HANNARI/antigravity-Codex-Claude-effort-slider', 'MIT · 月上寒'],
@@ -1675,11 +1675,11 @@
     ['mobius/dsh-performance-slider', 'Upstream'],
     ['claudenoshujin/claude-web', 'Mascot Pile & Micro-Ecology Interaction Inspiration'],
     ['wp3171216237/dsh-TUI', 'MIT · chimney (Deepy Whale Inspiration)'],
-  ].map(([repo, meta]) => ({ repo, url: 'https://github.com/' + repo, meta }));
+  ].map(([repo, meta, metaZh]) => ({ repo, url: 'https://github.com/' + repo, meta, metaZh }));
 
   const LICENSE_SUMMARY_TEXT = [
     'GNU General Public License v3.0 (GPL-3.0-only)',
-    'Custom Fork v0.0.1 based on Obsidian Prism by RMvdesi (https://github.com/RMvdesi/obsidian-prism)',
+    'Custom Fork v0.0.2 based on Obsidian Prism by RMvdesi (https://github.com/RMvdesi/obsidian-prism)',
     'Copyright (C) 2026 RMvdesi (https://github.com/RMvdesi/obsidian-prism)',
     '',
     'Obsidian Prism is free and open-source software licensed under GPL-3.0.',
@@ -1979,7 +1979,7 @@
 
     const doc = typeof document !== 'undefined' ? document : null;
     if (!doc) return;
-    const displayVersion = '0.0.1';
+    const displayVersion = '0.0.2';
     const syncChrome = G.__agPrismHostEnhancer?.syncSettingsDialogChrome;
     if (isFn(syncChrome)) syncChrome(doc, runGuardedMut);
     const lang = getLang();
@@ -3591,19 +3591,21 @@
           );
 
           const creditsGrid = mkEl('div', 'ag-cs-about-credits');
+          const _useZhCredit = typeof isZh === 'function' && isZh();
           for (const item of UPSTREAM_CREDITS) {
             const a = mkEl('a');
+            const metaText = (_useZhCredit && item.metaZh) || item.meta;
             sa(a, 'href', item.url);
             sa(a, 'target', '_blank');
             sa(a, 'rel', 'noopener noreferrer');
             sa(a, 'data-ag-cs-credit', item.repo);
-            sa(a, 'title', `${item.repo} — ${item.meta}`);
+            sa(a, 'title', `${item.repo} — ${metaText}`);
             ap(
               creditsGrid,
               ap(
                 a,
                 ap(mkEl('span', 'ag-cs-credit-top'), mkEl('span', 'ag-cs-credit-repo', item.repo), mkEl('span', 'ag-cs-credit-ext', '↗')),
-                mkEl('span', 'ag-cs-credit-meta', item.meta)
+                mkEl('span', 'ag-cs-credit-meta', metaText)
               )
             );
           }

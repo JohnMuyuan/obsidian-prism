@@ -62,7 +62,7 @@ test('v2.34.0 Effort Slider: normalizes kebab-case slug effortIndex and unlocks 
     assert.equal(neonProf.baseName, 'Gemini 4 Neon');
     assert.deepEqual(neonProf.levels.map((l) => l.effort), ['low', 'medium', 'high', 'xhigh']);
     assert.equal(neonProf.currentEffort, 'xhigh');
-    assert.equal(neonProf.currentLabel, 'Extra');
+    assert.equal(neonProf.currentLabel, 'Extra High');
 
     const opusProf = effortSlider.resolveModelEffortProfile(ctx, 'Claude Opus 5.5');
     assert.equal(opusProf.locked, false);
@@ -899,10 +899,10 @@ test('v2.34.0 Effort Slider: switching from Gemini 4 Neon (XHigh) to Gemini 4 Ca
   try {
     ctrl.sync({ effortSliderModule: 'auto' });
 
-    // 1) User selects Neon Extra (XHigh): trigger shows "Gemini 4 Neon Extra" while keeping exact React HostText nodes!
+    // 1) User selects Neon Extra High (XHigh): trigger shows "Gemini 4 Neon Extra High" while keeping exact React HostText nodes!
     currentSelected = neonXHigh;
     win.__agCodexEffortSliderInstance.rescan();
-    assert.equal(outerSpan.textContent, 'Gemini 4 Neon Extra');
+    assert.equal(outerSpan.textContent, 'Gemini 4 Neon Extra High');
     assert.equal(outerSpan.firstChild, reactModelText, 'Model base TextNode reference must be preserved');
     assert.equal(effortSpan.firstChild, reactEffortText, 'Effort Span HostText reference must NEVER be replaced via textContent');
     assert.equal(effortSpan.style.color, '#5b21b6', 'Neon Extra should display Gemini deep-purple Extra High tier');
@@ -1191,10 +1191,10 @@ test('Issue #11: multi-HostText effortSpan (React 19 [" ", "Medium"]) & extra sp
   try {
     ctrl.sync({ effortSliderModule: 'auto' });
 
-    // 1) 滑块开启态：切到 Argon Extra (XHigh) -> 两枚 React HostText 均保持挂载且额外原生 span 不被删除
+    // 1) 滑块开启态：切到 Argon Extra High (XHigh) -> 两枚 React HostText 均保持挂载且额外原生 span 不被删除
     currentSelected = argonXHigh;
     win.__agCodexEffortSliderInstance.rescan();
-    assert.equal(outerSpan.textContent, 'Gemini 4 Argon Extra');
+    assert.equal(outerSpan.textContent, 'Gemini 4 Argon Extra High');
     assert.equal(reactSpaceText.isConnected, true, 'Leading space HostText must remain connected');
     assert.equal(reactEffortText.isConnected, true, 'Effort HostText must NEVER be detached by _setTxt');
     assert.equal(extraNativeSpan.isConnected, true, 'Extra native <span> inside outerSpan must NEVER be removed');
@@ -1571,12 +1571,12 @@ test('Issue #16 + PR #12 + Issue #11: React 19 multi-HostText [" ", "Medium"] ->
     assert.equal(reactEffortText.isConnected, true);
     assert.equal(extraNativeSpan.isConnected, true);
 
-    // Real tier change Medium -> Extra updates all 3 sites while keeping React 19 HostText nodes intact
+    // Real tier change Medium -> Extra High updates all 3 sites while keeping React 19 HostText nodes intact
     currentSelected = argonXHigh;
     win.__agCodexEffortSliderInstance.rescan();
-    assert.equal(outerSpan.textContent, 'Gemini 4 Argon Extra');
-    assert.equal(sibSpan.textContent, 'Extra');
-    assert.equal(valEl.textContent, 'Extra');
+    assert.equal(outerSpan.textContent, 'Gemini 4 Argon Extra High');
+    assert.equal(sibSpan.textContent, 'Extra High');
+    assert.equal(valEl.textContent, 'Extra High');
     assert.equal(reactSpaceText.nodeValue, ' ');
     assert.equal(reactSpaceText.isConnected, true);
     assert.equal(reactEffortText.isConnected, true);

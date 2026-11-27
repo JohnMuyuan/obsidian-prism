@@ -446,7 +446,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     const settingsSec = appearancePanel.querySelector('#ag-cs-settings-sec');
     assert.ok(settingsSec);
     assert.equal(settingsSec.querySelector('h3')?.textContent, 'Obsidian Prism · 黑曜棱镜');
-    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v0.0.1');
+    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v0.0.2');
     const brandMarkHtml = settingsSec.querySelector('.ag-cs-settings-brand-mark')?.innerHTML || '';
     assert.ok(
       brandMarkHtml.includes('ag-cs-brand-logo-svg') || brandMarkHtml.includes('ag-cs-settings-brand-svg'),
@@ -1532,7 +1532,10 @@ test('v3.5.1 mounts dual mascot stage, brand optical glyphs, Orchestrator crysta
     assert.ok(claudeRowGlyph, 'Expected .ag-cs-panel-row-glyph inside live menuitem lead flex container');
     assert.equal(claudeRowGlyph.getAttribute('data-brand'), 'claude');
     assert.equal(claudeRowGlyph.getAttribute('data-selected'), 'false');
-    assert.equal(claudeRowGlyph.style.getPropertyValue('opacity'), '0.78');
+    assert.equal(claudeRowGlyph.style.getPropertyValue('opacity'), '1');
+    assert.ok(claudeRowGlyph.innerHTML.includes('var(--glyph-color)'));
+    assert.ok(hydrogenRowGlyph.innerHTML.includes('var(--glyph-color)'));
+    assert.ok(orchRowGlyph.innerHTML.includes('data-monochrome="false"'));
     assert.equal(claudeLead.firstChild, claudeRowGlyph);
     assert.equal(claudeName.textContent, 'Claude Sonnet 4.6');
     assert.equal(claudeBadge.textContent, '新建');

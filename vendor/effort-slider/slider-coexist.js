@@ -47,7 +47,7 @@
     const [k, vs] = g.split(':');
     for (const v of vs.split('|')) EFF_MAP[v] = k;
   }
-  const EFF_LABELS = { off: 'Off', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra', max: 'Max', auto: 'Auto', adaptive: 'Adaptive', thinking: 'Thinking' };
+  const EFF_LABELS = { off: 'Off', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra High', max: 'Max', auto: 'Auto', adaptive: 'Adaptive', thinking: 'Thinking' };
 
   function normalizeEffortToken(raw) {
     const s = String(raw || '').trim().replace(/^[(\uff08]+|[)\uff09]+$/g, '').trim().replace(/\s+thinking$/i, '').toLowerCase();

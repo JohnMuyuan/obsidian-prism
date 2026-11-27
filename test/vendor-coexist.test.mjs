@@ -2723,7 +2723,7 @@ test('Battle 5: slider-coexist Traditional Chinese EFF_MAP / Current: prefix & f
   const pTw = sliderMod.parseLocalizedModelLabel('選擇模型：Claude Opus 4.6（極高）');
   assert.equal(pTw.rawBase, 'Claude Opus 4.6');
   assert.equal(pTw.effort, 'xhigh');
-  assert.equal(pTw.canonicalLabel, 'Claude Opus 4.6 (Extra)');
+  assert.equal(pTw.canonicalLabel, 'Claude Opus 4.6 (Extra High)');
   const pCur = sliderMod.parseLocalizedModelLabel('Current: Gemini 4 Hydrogen (Minimal)');
   assert.equal(pCur.rawBase, 'Gemini 4 Hydrogen');
   assert.equal(pCur.effort, 'minimal');

@@ -411,56 +411,37 @@ void main() {
     col = mix(col, vec3(0.47, 0.52, 0.59), tL * 0.72);
   }
 
-  // ── 9. 可调滑块模式 ──
+  // ── 9. 可调滑块模式：卡 1 丝绒微尘流 ──
   if (u_reduce > 1.5) {
-    float fU = clamp(u_reduce > 3.5 ? (u_reduce - 4.0) : (u_reduce - 2.0), 0.0, 1.0);
-    float aM = 1.0 - smoothstep(fU - 0.012, fU + 0.012, vUv.x);
-    vec3 sT = u_accent > 4.5 ? vec3(0.90, 0.95, 1.0) : cSp(clamp(vUv.x * 0.82 + 0.08, 0.0, 1.0), u_accent);
-
-    float tSh = smoothstep(0.14, 0.96, yN);
-    float wSh = 1.0 - smoothstep(0.0, 5.2, rimD);
-    float bBv = exp(-pow((yN + 0.86) / 0.14, 2.0));
-    float kCs = exp(-pow(max(0.0, vUv.x - fU) / 0.065, 2.0));
-    float bW = (1.0 - smoothstep(0.0, 1.15 + aaPx, pxD)) * (0.30 + 0.50 * eG);
-    float tLq = u_reduce > 3.5 ? 0.0 : u_time * 0.65;
-    float w1 = sin(px.x * 0.056 - tLq * 1.15 + sin(px.y * 0.16 + tLq * 0.72) * 1.35);
-    float w2 = sin(px.x * 0.094 + px.y * 0.13 + tLq * 0.84 + h1 * 1.5);
-    float lFl = 0.5 + 0.5 * (w1 * 0.58 + w2 * 0.42);
-    float lCs = pow(clamp(lFl, 0.0, 1.0), 2.8);
-    float lBd = exp(-pow((yN + 0.10 - 0.16 * sin(px.x * 0.044 - tLq)) / 0.48, 2.0));
-    float lAm = 0.32 + 0.68 * u_ambient;
-    vec3 lTn = mix(vec3(0.36, 0.52, 0.82), sT, u_accent > 4.5 ? 0.15 : 0.42);
-    vec3 gC;
-    if (dk > 0.5) {
-      gC = mix(vec3(0.092, 0.108, 0.152), vec3(0.040, 0.048, 0.072), tSh * 0.86);
-      gC += vec3(0.030, 0.036, 0.054) * (h1 - 0.5);
-      gC += vec3(0.28, 0.36, 0.52) * bW * (0.20 + 0.24 * lFl) * (1.0 - tSh * 0.45);
-      gC += lTn * (lCs * 0.22 + lFl * 0.07) * lBd * lAm;
-      gC *= 1.0 - wSh * 0.48;
-      gC *= 1.0 - kCs * 0.52;
-      gC += vec3(0.28, 0.35, 0.48) * bBv * 0.24 * (1.0 - kCs * 0.68);
-    } else {
-      gC = mix(vec3(0.75, 0.79, 0.87), vec3(0.58, 0.64, 0.74), tSh * 0.78);
-      gC += vec3(0.035) * (h1 - 0.5);
-      gC -= vec3(0.10, 0.12, 0.16) * bW * 0.24;
-      gC += mix(vec3(0.88, 0.94, 1.0), lTn, 0.35) * lCs * lBd * 0.18 * lAm;
-      gC *= 1.0 - wSh * 0.20;
-      gC *= 1.0 - kCs * 0.24;
-      gC += vec3(1.0) * bBv * 0.28;
+    float fU = clamp(u_reduce > 3.5 ? u_reduce - 4.0 : u_reduce - 2.0, 0.0, 1.0), fE = min(1.0, max(cr.y, fU * cr.x + capR * 0.7) / cr.x);
+    float fM = 1.0 - smoothstep(-edgeAa, edgeAa, sdCap(px - vec2((fE - 1.0) * hs.x, 0.0), vec2(fE * hs.x, hs.y), capR) + 0.35 / dpr);
+    if (fM < 0.002) { fragColor = vec4(0.0); return; }
+    float u = clamp(vUv.x / max(fE, 0.001), 0.0, 1.0), k = 0.42 + 0.58 * fU, tS = u_reduce > 3.5 ? 0.0 : u_time, dK = step(0.5, dk);
+    vec3 c0 = u_accent > 4.5 ? vec3(0.76, 0.80, 0.86) : (u_accent > 0.5 ? cSp(0.18, u_accent) : mix(vec3(0.49, 0.83, 0.99), vec3(0.77, 0.71, 0.99), fU));
+    vec3 c1 = u_accent > 4.5 ? vec3(0.54, 0.60, 0.68) : (u_accent > 0.5 ? cSp(0.52, u_accent) : mix(vec3(0.23, 0.51, 0.96), vec3(0.49, 0.23, 0.93), fU));
+    vec3 c2 = u_accent > 4.5 ? vec3(0.32, 0.37, 0.45) : (u_accent > 0.5 ? cSp(0.86, u_accent) : mix(vec3(0.15, 0.39, 0.92), vec3(0.23, 0.03, 0.39), fU));
+    vec3 dB = vec3(0.12, 0.16, 0.23);
+    float s1 = smoothstep(0.0, 0.32, u), s2 = smoothstep(0.32, 0.72, u), s3 = smoothstep(0.72, 1.0, u);
+    vec3 rgb = mix(mix(mix(mix(vec3(0.28, 0.33, 0.41), vec3(0.20, 0.25, 0.33), dK), c1, 0.38 + 0.10 * dK), mix(dB, c1, 0.52), s2), mix(mix(vec3(0.06, 0.09, 0.16), dB, dK), c2, 0.56 + 0.09 * dK), s3);
+    float a = mix(mix(mix(0.0, (0.24 + 0.10 * dK) * k, s1), 0.62 * k, s2), (0.86 - 0.02 * dK) * k, s3), lf = smoothstep(0.08, 0.40, u);
+    if (lf > 0.005) {
+      for (int li = 0; li < 2; li++) {
+        float fl = float(li), sz = 9.5 + 4.0 * fl, sp = (7.5 + 4.5 * fl) * (0.6 + 0.6 * k);
+        vec2 pC = vec2(vUv.x * cr.x - tS * sp, (1.0 - vUv.y) * cr.y) / sz, ci = floor(pC), rn = hash22(ci + vec2(fl * 29.3 + 3.1, fl * 17.7 + 7.3));
+        float h4 = hash21(ci + vec2(41.7 + fl * 13.0, 19.3));
+        if (h4 > 0.42) {
+          float rd = (0.68 + 0.82 * pow(u, 1.15) * rn.x) * (1.0 - 0.18 * fl), dM = 1.0 - smoothstep(rd * 0.45, rd + 0.55, length((fract(pC) - (0.20 + 0.60 * rn)) * sz));
+          float dA = clamp(dM * lf * (0.35 + 0.65 * pow(sin(tS * (1.2 + rn.y * 2.0) + h4 * 12.56), 2.0)) * (0.38 + 0.56 * u) * k, 0.0, 1.0);
+          rgb = mix(rgb, h4 > 0.62 ? vec3(1.0) : c0, dA);
+          a += dA * (1.0 - a);
+        }
+      }
     }
-
-    float eB = 0.25 + 0.75 * fU;
-    float gM = dk > 0.5 ? 1.0 : 0.72;
-    vec3 aC = pow(max(col, vec3(0.0)), vec3(1.06)) * (dk > 0.5 ? 1.08 : 1.02);
-    float tBr = exp(-pow((yN - 0.52 - N.x * 0.14) / 0.16, 2.0));
-    float tKn = exp(-pow((yN - 0.62 - N.x * 0.07) / 0.085, 2.0));
-    float bBn = exp(-pow((yN + 0.72 - N.x * 0.06) / 0.10, 2.0));
-    aC += vec3(0.95, 0.98, 1.0) * (tBr * 0.12 + tKn * 0.22) * gM;
-    aC += mix(vec3(0.72, 0.86, 1.0), sT, 0.50) * bBn * 0.22 * eB * gM;
-    aC += vec3(0.96, 0.98, 1.0) * bld * rSp * eG * (dk > 0.5 ? 0.36 : 0.24);
-    aC += sT * (0.10 + 0.16 * eB) * (0.40 + 0.60 * crn) * (0.35 + 0.65 * u_ambient) * gM;
-    aC += mix(vec3(0.90, 0.96, 1.0), sT, 0.42) * exp(-pow(max(0.0, fU - vUv.x) / 0.07, 2.0)) * aM * (dk > 0.5 ? 0.26 : 0.16);
-    col = mix(gC, aC, aM);
+    float tA = exp(-pow(((1.0 - vUv.y) * cr.y - 1.35) / 0.55, 2.0)) * u * (0.52 - 0.18 * dK);
+    rgb = mix(rgb, vec3(1.0), tA) + (hash21(gl_FragCoord.xy + vec2(17.0, 59.0)) - 0.5) * (1.5 / 255.0);
+    float oA = clamp(a + tA * (1.0 - a), 0.0, 1.0) * fM;
+    fragColor = vec4(clamp(rgb, 0.0, 1.0) * oA, oA);
+    return;
   }
 
   col = max(col, vec3(0.0));
@@ -695,33 +676,20 @@ void main() {
       ctx.restore();
     }
 
-    // 2D 降级滑块分区：右侧凹陷暗色空槽 × 左侧顶部镜面高光水晶
     if (sliderFillRatio >= 0) {
-      const splitX = clamp(sliderFillRatio, 0, 1) * cssW;
-      if (splitX < cssW) {
-        const gr = ctx.createLinearGradient(0, 0, 0, cssH);
-        if (isDark) {
-          gr.addColorStop(0, '#07090f');
-          gr.addColorStop(0.45, '#10141f');
-          gr.addColorStop(0.92, '#141a28');
-          gr.addColorStop(1, '#263046');
-        } else {
-          gr.addColorStop(0, '#96a2b6');
-          gr.addColorStop(0.55, '#bcc6d6');
-          gr.addColorStop(1, '#e4eaf4');
-        }
-        ctx.fillStyle = gr;
-        ctx.fillRect(splitX, 0, cssW - splitX, cssH);
-      }
-      if (splitX > 1) {
-        const gloss = ctx.createLinearGradient(0, 0, 0, cssH);
-        gloss.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
-        gloss.addColorStop(0.22, isDark ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.24)');
-        gloss.addColorStop(0.42, 'rgba(255, 255, 255, 0.02)');
-        gloss.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.fillStyle = gloss;
-        ctx.fillRect(0, 0, splitX, cssH);
-      }
+      ctx.restore();
+      ctx.clearRect(0, 0, cssW, cssH);
+      const fw = M.min(cssW, M.max(cssH, clamp(sliderFillRatio, 0, 1) * cssW + r * 0.7)), k = 0.42 + 0.58 * clamp(sliderFillRatio, 0, 1);
+      ctx.save();
+      ctx.beginPath(); ctx.roundRect(0, 0, fw, cssH, r); ctx.clip();
+      const vg = ctx.createLinearGradient(0, 0, fw, 0);
+      vg.addColorStop(0, 'rgba(20,30,50,0)');
+      vg.addColorStop(0.32, `rgba(72,82,134,${((isDark ? 0.34 : 0.24) * k).toFixed(2)})`);
+      vg.addColorStop(1, `rgba(${isDark ? '62,48,128' : '42,30,86'},${(0.85 * k).toFixed(2)})`);
+      ctx.fillStyle = vg; ctx.fillRect(0, 0, fw, cssH);
+      ctx.fillStyle = `rgba(255,255,255,${isDark ? 0.3 : 0.45})`; ctx.fillRect(fw * 0.25, 0.8, fw * 0.75, 1);
+      ctx.restore();
+      return;
     }
 
     // 外缘内缩避开 clip 抗锯齿毛边带
@@ -1010,7 +978,7 @@ void main() {
       glintAccumSec += dt;
       liquidAccumSec += dt;
       const proximityActive = currentProximity > 0.001;
-      const liquidFlowActive = hideLock && !reduceMotion && ambientVal > 0.001 && fillRatio >= 0 && fillRatio < 0.985;
+      const liquidFlowActive = hideLock && !reduceMotion && fillRatio >= 0;
       const liquidDirty = liquidFlowActive && liquidAccumSec >= 0.036;
       const glintVisible = !glintMotionOff && maxGlint > 0.015;
       const glintDirty =
@@ -1110,7 +1078,7 @@ void main() {
 
     const isIdle = () => {
       if (!hasDrawnFrame || wakeT >= 0 || fillSettleSec > 0 || currentProximity > 0.001 || targetProximity > 0.001) return false;
-      if (reduceMotion || lastDrawAmbient === 0) return true;
+      if (reduceMotion || (!wasLiquidFlow && lastDrawAmbient === 0)) return true;
       if (wasLiquidFlow) return false;
       fillGlintIntensities(elapsedTime, false, glintBuf);
       return M.max(glintBuf[0], glintBuf[1], glintBuf[2], glintBuf[3]) <= 0.015;

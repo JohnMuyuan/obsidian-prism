@@ -272,10 +272,10 @@
 
     const buildPanelRowGlyphSvg = (brand, tier, isSelected, isMono = false) => {
       if (brand === 'antigravity') {
-        return renderSparkSvg(15, isSelected ? tier || 'auto' : 'low', !isSelected || isMono, 'ag-cs-model-glyph-svg');
+        return renderSparkSvg(15, tier || 'auto', isMono, 'ag-cs-model-glyph-svg');
       }
-      const fillAttr = isSelected && !isMono
-        ? 'style="fill:var(--glyph-color-hi);fill-opacity:1"'
+      const fillAttr = !isMono
+        ? `style="fill:var(--glyph-color${isSelected ? '-hi' : ''});fill-opacity:1"`
         : `fill="currentColor" fill-opacity="${isSelected ? '0.95' : '0.72'}"`;
       return svgW('ag-cs-model-glyph-svg', 15, '0 0 24 24', `<path d="${BRAND_PATHS[brand] || BRAND_PATHS.gemini}" ${fillAttr} fill-rule="evenodd"/>`);
     };
@@ -312,8 +312,8 @@
         if (created || ga(glyph, 'data-brand') !== info.brand || ga(glyph, 'data-tier') !== info.tier || ga(glyph, 'data-selected') !== selStr || ga(glyph, 'data-mono') !== monoStr) {
           sa(glyph, 'data-brand', info.brand); sa(glyph, 'data-tier', info.tier); sa(glyph, 'data-selected', selStr); sa(glyph, 'data-mono', monoStr);
           glyph.innerHTML = buildPanelRowGlyphSvg(info.brand, info.tier, isSelected, isMono);
-          sp(glyph, 'opacity', isSelected ? '1' : '0.78');
-          sp(glyph, 'filter', isSelected && info.brand !== 'openai' && !isMono ? 'drop-shadow(0 0 3px var(--glyph-glow))' : 'none');
+          sp(glyph, 'opacity', isSelected || !isMono ? '1' : '0.78');
+          sp(glyph, 'filter', isSelected && !isMono ? 'drop-shadow(0 0 3px var(--glyph-glow))' : 'none');
         }
       }
     };

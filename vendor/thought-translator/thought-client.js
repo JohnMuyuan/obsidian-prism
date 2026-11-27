@@ -217,6 +217,416 @@
     lockedHeights.delete(p);
     if (p[K_ST] && p[K_ST].minHeight) p[K_ST].removeProperty('min-height');
   };
+  const VP_RUN_SEL =
+    '[data-testid="input-cancel-button"],[data-testid="stop-button"],[data-testid="cancel-button"],[data-testid="agent-loading"],button[data-tooltip-id="input-send-button-cancel-tooltip"],[data-testid="thinking-collapsible-trigger"][data-op-thought-state="streaming"],[data-testid="thinking-collapsible-trigger"][data-ag-cs-spark-streaming="1"],.animate-shimmer-text';
+  const USER_SCROLL_GRACE_MS = 480;
+  let vpFollowMap = new WeakMap();
+  const vpFollowRafs = new Set();
+  const vpFollowTimers = new Set();
+  let followGuardBound = false;
+  let vpPointerDrag = false;
+  let lastVpUserGestureAt = -1e9;
+  let lastThoughtCollapseAt = -1e9;
+  let autoFollowHealCount = 0;
+
+  const getVpMaxScroll = (vp) => Math.max(0, (vp?.scrollHeight || 0) - (vp?.clientHeight || 0));
+
+  function findVpFromEl(el) {
+    if (!el) return null;
+    if (el.nodeType === 1 && ga(el, 'data-testid') === 'autoscroll-viewport') return el;
+    const targetEl = el.nodeType === 1 ? el : parEl(el);
+    if (targetEl && typeof targetEl.closest === 'function') {
+      const direct = targetEl.closest('[data-testid="autoscroll-viewport"]');
+      if (direct) return direct;
+      const conv = targetEl.closest('[data-testid="conversation-view"]');
+      if (conv && typeof conv.querySelector === 'function') {
+        return conv.querySelector('[data-testid="autoscroll-viewport"]');
+      }
+    }
+    return null;
+  }
+
+  function findActiveVp(hintEl) {
+    const fromHint = findVpFromEl(hintEl);
+    if (fromHint) return fromHint;
+    if (isConn(cachedConvRoot) && typeof cachedConvRoot.querySelector === 'function') {
+      const vp = cachedConvRoot.querySelector('[data-testid="autoscroll-viewport"]');
+      if (vp) return vp;
+    }
+    return typeof document !== 'undefined' && typeof document.querySelector === 'function'
+      ? document.querySelector('[data-testid="autoscroll-viewport"]')
+      : null;
+  }
+
+  function getVpFollowRec(vp) {
+    let rec = vpFollowMap.get(vp);
+    if (!rec) {
+      const max = getVpMaxScroll(vp);
+      const top = typeof vp.scrollTop === 'number' ? vp.scrollTop : 0;
+      const near = max - top <= 72;
+      rec = {
+        pinned: near,
+        detached: !near,
+        prevTop: top,
+        prevMax: max,
+        lastNearAt: near ? nowMs() : -1e9,
+        rafId: 0,
+        timerId: null,
+      };
+      vpFollowMap.set(vp, rec);
+    }
+    return rec;
+  }
+
+  function isConvActivelyRunning(vp) {
+    if (trackedStreamingTriggers.size > 0) return true;
+    if (nowMs() - lastThoughtCollapseAt <= 2500) return true;
+    const conv = vp && typeof vp.closest === 'function' ? vp.closest('[data-testid="conversation-view"]') : null;
+    const root = conv || (isConn(cachedConvRoot) ? cachedConvRoot : null) || vp;
+    try {
+      if (root && typeof root.querySelector === 'function' && root.querySelector(VP_RUN_SEL)) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  function isInsideInnerScrollable(el, vp, dy) {
+    let cur = el && el.nodeType === 1 ? el : parEl(el);
+    while (cur && cur !== vp) {
+      const prev = cur.previousElementSibling;
+      if (prev && ga(prev, 'data-testid') === 'thinking-collapsible-trigger' && ga(prev, A_EXP) === 'true') {
+        return true;
+      }
+      const sh = cur.scrollHeight || 0;
+      const ch = cur.clientHeight || 0;
+      if (sh > ch + 2) {
+        let scrollable = false;
+        try {
+          const cls = String(ga(cur, 'class') || cur.className || '');
+          if (cls.includes('overflow-y-auto') || cls.includes('overflow-y-scroll') || cls.includes('overflow-auto')) {
+            scrollable = true;
+          } else if (typeof W.getComputedStyle === 'function') {
+            const oy = W.getComputedStyle(cur)?.overflowY || '';
+            scrollable = oy === 'auto' || oy === 'scroll' || oy === 'overlay';
+          }
+        } catch (_) {}
+        if (scrollable) {
+          const st = cur.scrollTop || 0;
+          if ((dy < 0 && st > 1) || (dy > 0 && st < sh - ch - 1)) return true;
+        }
+      }
+      cur = parEl(cur);
+    }
+    return false;
+  }
+
+  function scheduleVpFollowHeal(vp, rec) {
+    if (!vp || !rec || rec.rafId || rec.timerId) return;
+    const runHeal = () => {
+      if (rec.rafId) {
+        vpFollowRafs.delete(rec.rafId);
+        rec.rafId = 0;
+      }
+      if (rec.timerId) {
+        vpFollowTimers.delete(rec.timerId);
+        rec.timerId = null;
+      }
+      if (currentMode === 'off' || !isConn(vp)) return;
+      const now = nowMs();
+      if (rec.detached || !rec.pinned || vpPointerDrag || now - lastVpUserGestureAt <= USER_SCROLL_GRACE_MS) return;
+      if (!isConvActivelyRunning(vp)) return;
+      const nextMax = getVpMaxScroll(vp);
+      const curTop = typeof vp.scrollTop === 'number' ? vp.scrollTop : 0;
+      if (nextMax - curTop > 2) {
+        vp.scrollTop = nextMax;
+        rec.prevTop = nextMax;
+        rec.prevMax = nextMax;
+        rec.lastNearAt = now;
+        autoFollowHealCount += 1;
+      }
+    };
+    const raf = getRafFn();
+    if (raf) {
+      const id = raf(runHeal);
+      rec.rafId = id;
+      vpFollowRafs.add(id);
+    } else {
+      const t = setTimeout(runHeal, 16);
+      t?.unref?.();
+      rec.timerId = t;
+      vpFollowTimers.add(t);
+    }
+  }
+
+  function reconcileVpFollow(hintEl, forceCheck = false) {
+    const vp = findActiveVp(hintEl);
+    if (!vp || !isConn(vp) || typeof vp.scrollTop !== 'number') return;
+    const rec = getVpFollowRec(vp);
+    const now = nowMs();
+    const top = vp.scrollTop || 0;
+    const max = getVpMaxScroll(vp);
+    const gap = max - top;
+    if (vpPointerDrag || now - lastVpUserGestureAt <= USER_SCROLL_GRACE_MS) {
+      rec.prevTop = top;
+      rec.prevMax = max;
+      return;
+    }
+    if (rec.pinned && !rec.detached && isConvActivelyRunning(vp)) {
+      const hostDetached = vp[K_ST]?.overflowAnchor === 'auto';
+      if (gap > 4 || (forceCheck && (gap > 2 || hostDetached))) {
+        scheduleVpFollowHeal(vp, rec);
+      } else if (gap <= 56) {
+        rec.lastNearAt = now;
+      }
+    } else if (gap <= 56 && !rec.detached) {
+      rec.pinned = true;
+      rec.lastNearAt = now;
+    }
+    rec.prevTop = top;
+    rec.prevMax = max;
+  }
+
+  function onThoughtCollapse(btn) {
+    lastThoughtCollapseAt = nowMs();
+    reconcileVpFollow(btn, true);
+  }
+
+  const onVpWheel = (ev) => {
+    if (currentMode === 'off') return;
+    const dy = Number(ev?.deltaY || 0);
+    if (!dy) return;
+    const el = ev?.target?.nodeType === 1 ? ev.target : parEl(ev?.target);
+    const vp = findVpFromEl(el);
+    if (!vp) return;
+    if (isInsideInnerScrollable(el, vp, dy)) return;
+    const now = nowMs();
+    lastVpUserGestureAt = now;
+    const rec = getVpFollowRec(vp);
+    if (dy < 0) {
+      rec.detached = true;
+      rec.pinned = false;
+    } else {
+      const gap = getVpMaxScroll(vp) - (vp.scrollTop || 0);
+      if (gap <= 72 + dy) {
+        rec.detached = false;
+        rec.pinned = true;
+        rec.lastNearAt = now;
+      }
+    }
+  };
+
+  const onVpPointerDown = (ev) => {
+    if (currentMode === 'off') return;
+    const el = ev?.target?.nodeType === 1 ? ev.target : parEl(ev?.target);
+    const vp = findVpFromEl(el);
+    if (!vp) return;
+    const isScrollbar =
+      el === vp ||
+      Boolean(el?.closest?.('[data-testid="overlay-scrollbar"], [data-overlay-scrollbar-track]'));
+    if (ev?.pointerType === 'touch' || isScrollbar) {
+      vpPointerDrag = true;
+      lastVpUserGestureAt = nowMs();
+    }
+  };
+
+  const onVpPointerUp = () => {
+    if (vpPointerDrag) {
+      vpPointerDrag = false;
+      lastVpUserGestureAt = nowMs();
+    }
+  };
+
+  const onVpClick = (ev) => {
+    if (currentMode === 'off') return;
+    const el = ev?.target?.nodeType === 1 ? ev.target : parEl(ev?.target);
+    if (!el || typeof el.closest !== 'function') return;
+    if (
+      el.closest(
+        '.ag-cs-nav-outline-item, [data-testid="conversation-navigator-turn"], [data-testid="conversation-navigator-group"], [data-testid="load-more-status-pill"]'
+      )
+    ) {
+      const vp = findActiveVp(el);
+      if (vp) {
+        const rec = getVpFollowRec(vp);
+        rec.detached = true;
+        rec.pinned = false;
+      }
+      lastVpUserGestureAt = nowMs();
+    } else if (
+      el.closest('.agy-scroll-bottom, [data-testid="scroll-to-bottom"], [data-testid="input-send-button"], [data-testid="send-button"]')
+    ) {
+      const vp = findActiveVp(el);
+      if (vp) {
+        const rec = getVpFollowRec(vp);
+        rec.detached = false;
+        rec.pinned = true;
+        rec.lastNearAt = nowMs();
+      }
+    }
+  };
+
+  const onVpKeyDown = (ev) => {
+    if (currentMode === 'off') return;
+    const key = ev?.key;
+    if (!key) return;
+    const el = ev?.target?.nodeType === 1 ? ev.target : parEl(ev?.target);
+    if (ev.altKey && (key === 'ArrowUp' || key === 'ArrowDown')) {
+      const vp = findActiveVp(el);
+      if (vp) {
+        const rec = getVpFollowRec(vp);
+        rec.detached = true;
+        rec.pinned = false;
+      }
+      lastVpUserGestureAt = nowMs();
+      return;
+    }
+    const tag = el?.tagName;
+    const isEditable =
+      tag === 'INPUT' ||
+      tag === 'TEXTAREA' ||
+      Boolean(el?.isContentEditable || el?.closest?.('[contenteditable="true"], [role="textbox"]'));
+    if (isEditable) {
+      if (key === 'Enter' && !ev.shiftKey && !ev.isComposing && el?.closest?.('[data-testid="agent-input-box"]')) {
+        const vp = findActiveVp(el);
+        if (vp) {
+          const rec = getVpFollowRec(vp);
+          rec.detached = false;
+          rec.pinned = true;
+          rec.lastNearAt = nowMs();
+        }
+      }
+      return;
+    }
+    if (key === 'ArrowUp' || key === 'PageUp' || key === 'Home' || (key === ' ' && ev.shiftKey)) {
+      const vp = findActiveVp(el);
+      if (vp) {
+        const rec = getVpFollowRec(vp);
+        rec.detached = true;
+        rec.pinned = false;
+      }
+      lastVpUserGestureAt = nowMs();
+    } else if (key === 'End') {
+      const vp = findActiveVp(el);
+      if (vp) {
+        const rec = getVpFollowRec(vp);
+        rec.detached = false;
+        rec.pinned = true;
+        rec.lastNearAt = nowMs();
+      }
+    }
+  };
+
+  const onVpScroll = (ev) => {
+    if (currentMode === 'off') return;
+    const vp = ev?.target;
+    if (!vp || vp.nodeType !== 1 || ga(vp, 'data-testid') !== 'autoscroll-viewport' || typeof vp.scrollTop !== 'number') return;
+    const rec = getVpFollowRec(vp);
+    const now = nowMs();
+    const top = vp.scrollTop || 0;
+    const max = getVpMaxScroll(vp);
+    const gap = max - top;
+    const userRecent = vpPointerDrag || now - lastVpUserGestureAt <= USER_SCROLL_GRACE_MS;
+    if (userRecent) {
+      if (top < rec.prevTop - 2 && gap > 72) {
+        rec.detached = true;
+        rec.pinned = false;
+      } else if (gap <= 56) {
+        rec.detached = false;
+        rec.pinned = true;
+        rec.lastNearAt = now;
+      }
+      rec.prevTop = top;
+      rec.prevMax = max;
+      return;
+    }
+    const hostDetached = vp[K_ST]?.overflowAnchor === 'auto';
+    const droppedUp = top < rec.prevTop - 2;
+    if (rec.pinned && !rec.detached && isConvActivelyRunning(vp) && (gap > 4 || (hostDetached && (gap > 2 || droppedUp)))) {
+      scheduleVpFollowHeal(vp, rec);
+    } else if (gap <= 56 && !rec.detached) {
+      rec.pinned = true;
+      rec.lastNearAt = now;
+    }
+    rec.prevTop = top;
+    rec.prevMax = max;
+  };
+
+  const FOLLOW_GUARD_EVENTS = [
+    ['wheel', onVpWheel],
+    ['pointerdown', onVpPointerDown],
+    ['pointerup', onVpPointerUp],
+    ['pointercancel', onVpPointerUp],
+    ['click', onVpClick],
+    ['keydown', onVpKeyDown],
+    ['scroll', onVpScroll],
+  ];
+
+  function bindFollowGuard() {
+    if (followGuardBound || typeof W.addEventListener !== 'function') return;
+    for (let i = 0; i < FOLLOW_GUARD_EVENTS.length; i++) {
+      W.addEventListener(FOLLOW_GUARD_EVENTS[i][0], FOLLOW_GUARD_EVENTS[i][1], { capture: true, passive: true });
+    }
+    followGuardBound = true;
+  }
+
+  function unbindFollowGuard() {
+    if (followGuardBound && typeof W.removeEventListener === 'function') {
+      for (let i = 0; i < FOLLOW_GUARD_EVENTS.length; i++) {
+        W.removeEventListener(FOLLOW_GUARD_EVENTS[i][0], FOLLOW_GUARD_EVENTS[i][1], { capture: true });
+      }
+    }
+    followGuardBound = false;
+    vpPointerDrag = false;
+    lastVpUserGestureAt = -1e9;
+    lastThoughtCollapseAt = -1e9;
+    const caf = getCafFn();
+    for (const id of vpFollowRafs) {
+      try { caf?.(id); } catch (_) {}
+    }
+    vpFollowRafs.clear();
+    for (const t of vpFollowTimers) {
+      try { clearTimeout(t); } catch (_) {}
+    }
+    vpFollowTimers.clear();
+    vpFollowMap = new WeakMap();
+  }
+
+  function preserveOuterViewportAround(el, mutateFn) {
+    const vp = el && typeof el.closest === 'function' ? el.closest('[data-testid="autoscroll-viewport"]') : null;
+    if (!vp || typeof vp.scrollTop !== 'number') return mutateFn();
+    const rec = vpFollowMap.get(vp);
+    const prevTop = vp.scrollTop;
+    const prevSH = vp.scrollHeight || 0;
+    const prevCH = vp.clientHeight || 0;
+    const prevMax = Math.max(0, prevSH - prevCH);
+    const wasPinned = prevMax - prevTop <= 56 && !(rec && rec.detached);
+    const elRect = !wasPinned && typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+    const vpRect = !wasPinned && typeof vp.getBoundingClientRect === 'function' ? vp.getBoundingClientRect() : null;
+    const wasAbove = Boolean(elRect && vpRect && elRect.bottom <= vpRect.top + 8);
+    const out = mutateFn();
+    const nextSH = vp.scrollHeight || 0;
+    const nextCH = vp.clientHeight || 0;
+    const nextMax = Math.max(0, nextSH - nextCH);
+    if (wasPinned) {
+      if (Math.abs(vp.scrollTop - nextMax) > 1) vp.scrollTop = nextMax;
+      if (rec) {
+        rec.prevTop = vp.scrollTop;
+        rec.prevMax = nextMax;
+        rec.pinned = true;
+        rec.detached = false;
+        rec.lastNearAt = nowMs();
+      }
+    } else if (wasAbove && nextSH !== prevSH) {
+      const expected = Math.max(0, prevTop + (nextSH - prevSH));
+      if (Math.abs(vp.scrollTop - prevTop) <= 1 && Math.abs(expected - vp.scrollTop) > 2) {
+        vp.scrollTop = expected;
+        if (rec) {
+          rec.prevTop = expected;
+          rec.prevMax = nextMax;
+        }
+      }
+    }
+    return out;
+  }
 
   function queryTriggers() {
     if (typeof document === 'undefined') return [];
@@ -449,6 +859,7 @@
       }
       if (!isTriggerStreaming(btn)) {
         untrackStreamingTrigger(btn);
+        onThoughtCollapse(btn);
         wokeAny = true;
       } else {
         const panel = nextSib(btn);
@@ -488,6 +899,7 @@
           }
           if (!isConn(btn) || !isTriggerStreaming(btn)) {
             untrackStreamingTrigger(btn);
+            onThoughtCollapse(btn);
             scheduleScan(25);
           }
         });
@@ -1247,6 +1659,7 @@
       document.addEventListener('visibilitychange', onVisibilityChange);
       visBound = true;
     }
+    bindFollowGuard();
 
     if (cacheWarmed) return;
     cacheWarmed = true;
@@ -1379,13 +1792,15 @@
 
   function cleanOverlayKeepRaw(panel) {
     if (!panel) return;
-    claimPanelEntry(panel, null);
-    clearPanelStreamState(panel);
-    unlockHeight(panel);
-    clearPanelWaitTimer(panel);
-    clearTriggerStatusBadge(panel);
-    findDirectOverlay(panel)?.remove();
-    raList(panel, PANEL_CLEAN_ATTRS);
+    preserveOuterViewportAround(panel, () => {
+      claimPanelEntry(panel, null);
+      clearPanelStreamState(panel);
+      unlockHeight(panel);
+      clearPanelWaitTimer(panel);
+      clearTriggerStatusBadge(panel);
+      findDirectOverlay(panel)?.remove();
+      raList(panel, PANEL_CLEAN_ATTRS);
+    });
   }
 
   function cleanSinglePanelAttributes(panel) {
@@ -1408,6 +1823,7 @@
       document.removeEventListener('visibilitychange', onVisibilityChange);
       visBound = false;
     }
+    unbindFollowGuard();
     clearAllStreamingWatchers();
     stopTitleObserver();
     restoreAllToolSummaries();
@@ -2443,37 +2859,41 @@
       if (rb) rb.disabled = true;
       return;
     }
-    clearPanelStreamState(panel);
-    const ov = ensureOverlayShell(panel);
-    sa(ov, 'data-pending', '1');
-    ra(ov, 'data-failed');
-    ra(panel, A_FLD);
-    syncOverlayBadges(ov, panel, false, false);
+    preserveOuterViewportAround(panel, () => {
+      clearPanelStreamState(panel);
+      const ov = ensureOverlayShell(panel);
+      sa(ov, 'data-pending', '1');
+      ra(ov, 'data-failed');
+      ra(panel, A_FLD);
+      syncOverlayBadges(ov, panel, false, false);
 
-    const body = findChildByClass(ov, C_BD);
-    if (body) {
-      ra(body, 'data-raw-zh');
-      let hint = findChildByClass(body, C_PH);
-      if (!hint) {
-        clearEl(body);
-        hint = ap(body, markNoTr(ce(docOf(panel), 'span', C_PH)));
+      const body = findChildByClass(ov, C_BD);
+      if (body) {
+        ra(body, 'data-raw-zh');
+        let hint = findChildByClass(body, C_PH);
+        if (!hint) {
+          clearEl(body);
+          hint = ap(body, markNoTr(ce(docOf(panel), 'span', C_PH)));
+        }
+        if (pendingKind) sa(hint, 'data-pending-kind', pendingKind);
+        if (tc(hint) !== message) stc(hint, message);
       }
-      if (pendingKind) sa(hint, 'data-pending-kind', pendingKind);
-      if (tc(hint) !== message) stc(hint, message);
-    }
-    sa(panel, A_PND, '1');
-    ra(panel, A_RDY);
+      sa(panel, A_PND, '1');
+      ra(panel, A_RDY);
+    });
   }
 
   function clearPendingKeepRaw(panel) {
     if (!panel || ga(panel, A_RDY) === '1') return;
-    unlockHeight(panel);
-    ra(panel, A_PND);
-    const ov = findDirectOverlay(panel);
-    if (ov && ga(ov, 'data-pending') === '1') {
-      ov.remove();
-      if (ga(panel, A_FLD) !== '1') ra(panel, A_PNL);
-    }
+    preserveOuterViewportAround(panel, () => {
+      unlockHeight(panel);
+      ra(panel, A_PND);
+      const ov = findDirectOverlay(panel);
+      if (ov && ga(ov, 'data-pending') === '1') {
+        ov.remove();
+        if (ga(panel, A_FLD) !== '1') ra(panel, A_PNL);
+      }
+    });
   }
 
   function renderFailedState(panel, rawText, mode, sig, errInfo = null) {
@@ -2563,10 +2983,12 @@
         panelStreamStates.delete(panel);
         clearPanelHlItems(panel);
         if (!isConn(panel) || currentMode === 'off') return;
-        const prevScrollTop = typeof panel.scrollTop === 'number' ? panel.scrollTop : 0;
-        renderSafeMarkdownDom(body, text, ensurePanelFileMap(panel), panel, prevSt);
-        unlockHeight(panel);
-        if (prevScrollTop > 0 && typeof panel.scrollTop === 'number') panel.scrollTop = prevScrollTop;
+        preserveOuterViewportAround(panel, () => {
+          const prevScrollTop = typeof panel.scrollTop === 'number' ? panel.scrollTop : 0;
+          renderSafeMarkdownDom(body, text, ensurePanelFileMap(panel), panel, prevSt);
+          unlockHeight(panel);
+          if (prevScrollTop > 0 && typeof panel.scrollTop === 'number') panel.scrollTop = prevScrollTop;
+        });
       };
 
       const st = panelStreamStates.get(panel);
@@ -2609,9 +3031,11 @@
       }
     }
 
-    ra(panel, A_PND);
-    sa(panel, A_RDY, '1');
-    applyPanelViewMode(panel);
+    preserveOuterViewportAround(panel, () => {
+      ra(panel, A_PND);
+      sa(panel, A_RDY, '1');
+      applyPanelViewMode(panel);
+    });
   }
 
   function withLangSuffix(baseTag, lang = currentLang) {
@@ -2816,9 +3240,9 @@
 
         const rem = 30 - (now - entry.pa);
         if (entry.pa > 0 && !entry.dn && rem > 0) {
-          entry.sk = (entry.sk || 0) + 1;
-          if (entry.sk >= 2 && typeof setTimeout === 'function' && rem > 6) {
-            entry.sk = 0;
+          entry.skf = (entry.skf || 0) + 1;
+          if (entry.skf >= 2 && typeof setTimeout === 'function' && rem > 6) {
+            entry.skf = 0;
             entry.pTm = setTimeout(() => {
               entry.pTm = null;
               if (!entry.x && currentMode !== 'off') ensurePacerLoop();
@@ -2829,7 +3253,7 @@
           }
           return;
         }
-        entry.sk = 0;
+        entry.skf = 0;
 
         const dt = entry.pa > 0 ? Math.min(80, Math.max(8, now - entry.pa)) : 16.67;
         const basePerFrame = entry.dn
@@ -4278,6 +4702,7 @@
     }
     if (translateToolSummaries) scanToolSummaryContainers();
     if (translateTitles) scanConversationTitles();
+    reconcileVpFollow(cachedConvRoot);
   }
 
   function scheduleScan(delayMs = 55) {
@@ -4495,6 +4920,7 @@
     fetchModels: (input) => brCall('fetch-models', input),
     testConnection: (input) => brCall('test-connection', input),
     diagnose: (input) => brCall('diagnose', input),
+    getFollowGuardStats: () => ({ bound: followGuardBound, healCount: autoFollowHealCount }),
     __memCache: memCache,
     __toolSummaryRecords: toolSummaryRecords,
     __toolSummaryFailedUntil: toolSummaryFailedUntil,

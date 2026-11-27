@@ -1577,14 +1577,14 @@ test('Scenario 10 (PR #12 + Issue #16): 三处统一防乒乓 (valEl / effortSpa
   mo.trigger([{ type: 'characterData', target: valEl }]);
   assert.equal(getSelectedReads, readsBeforeInsideMut, 'allInsideSlider mutation must skip scan() completely');
 
-  // Genuine tier switch Medium -> Extra (xhigh) must update all 3 sites cleanly
+  // Genuine tier switch Medium -> Extra High (xhigh) must update all 3 sites cleanly
   selectedModel = neonXHigh;
   agObs.rescan();
-  assert.equal(valEl.textContent, 'Extra');
-  assert.equal(effortSpan.textContent, ' Extra');
-  assert.equal(neonRow.effortSpan.textContent, 'Extra');
+  assert.equal(valEl.textContent, 'Extra High');
+  assert.equal(effortSpan.textContent, ' Extra High');
+  assert.equal(neonRow.effortSpan.textContent, 'Extra High');
 
-  // External i18n translates Extra -> 極高 (Traditional Chinese) -> again 0 ping-pong overwrites
+  // External i18n translates Extra High -> 極高 (Traditional Chinese) -> again 0 ping-pong overwrites
   valEl.textContent = '極高';
   effortSpan.textContent = ' 極高';
   neonRow.effortSpan.textContent = '極高思考';
@@ -1598,7 +1598,7 @@ test('Scenario 10 (PR #12 + Issue #16): 三处统一防乒乓 (valEl / effortSpa
   // Empty DOM on sib must still be restored when logical label is non-empty
   neonRow.effortSpan.textContent = '';
   agObs.rescan();
-  assert.equal(neonRow.effortSpan.textContent, 'Extra', 'Empty sib must be restored even if __cesLastText matched');
+  assert.equal(neonRow.effortSpan.textContent, 'Extra High', 'Empty sib must be restored even if __cesLastText matched');
 
   // Stopping observer clears __cesLastText & __cesLastLabel so remount never sees stale cache
   agObs.stop();
@@ -1956,7 +1956,7 @@ test('Codex Desktop two-stage model picker: opens Effort-first card, resets defa
   assert.equal(panel.firstElementChild, listWrap, 'panel.firstElementChild must remain native model list wrapper');
   assert.ok(panel.querySelector('.ces-stars') && panel.querySelector('.ces-claude-canvas'), 'Must preserve starfield & Claude dither layers');
   assert.equal(panel.querySelector('.ces-cx-model-name')?.textContent, 'Gemini 4 Neon');
-  assert.equal(panel.querySelector('.ces-ag-effort-value')?.textContent, 'Extra');
+  assert.equal(panel.querySelector('.ces-ag-effort-value')?.textContent, 'Extra High');
   const resetBtn = panel.querySelector('.ces-cx-reset');
   assert.ok(resetBtn, 'Must render right reset button');
   assert.equal(resetBtn.disabled, false);
@@ -2190,7 +2190,8 @@ test('Model picker open/close spring-bloom CSS and Effort<->Models View Transiti
   assert.ok(css.includes('--_oy:10px;--_ox:50%;--_ob:100%;transform-origin:var(--_ox) var(--_ob) !important;'), 'Popover must anchor transform-origin to trigger side/align');
   assert.ok(css.includes('@keyframes ag-m{from{transform:translate3d(0,var(--_oy,10px),0) scale(.92);}}'), 'Popover entry keyframe must lift and scale smoothly');
   assert.ok(css.includes('@starting-style{.agy-overlay:is([data-ag-cs-model-overlay="1"],[data-ces-ov]){opacity:0;transform:translate3d(0,var(--_oy,10px),0) scale(.92);}}'), 'Popover must provide top-level @starting-style entry state');
-  assert.ok(css.includes('animation:ag-m 235ms var(--ag-ease-out) both,ag-cs-subtle-in 150ms ease-out both;animation:ag-m 250ms linear(0,.38 14%,1.032 46%,.994 72%,1) both,ag-cs-subtle-in 150ms ease-out both;'), 'Popover entry must decouple spring linear() transform from ease-out opacity with cubic-bezier fallback');
+  assert.ok(css.includes('animation:ag-m 235ms var(--ag-ease-out) backwards,ag-cs-subtle-in 150ms ease-out backwards;animation:ag-m 250ms linear(0,.38 14%,1.032 46%,.994 72%,1) backwards,ag-cs-subtle-in 150ms ease-out backwards;'), 'Popover entry must use backwards (never both/forwards) so transform containing block dissolves after open and never traps fixed View Usage submenus');
+  assert.ok(css.includes('animation:cv 190ms var(--ag-ease-out) backwards;'), 'Fallback stage slide must use backwards (never both/forwards) so panel children never trap fixed submenus');
   assert.ok(css.includes('::view-transition-group(cm){animation-duration:240ms;animation-timing-function:cubic-bezier(.22,1,.36,1);overflow:clip;'), 'Effort<->Models card morph must use GPU View Transition group without squashing');
   assert.ok(css.includes('html:active-view-transition-type(cf,cb)::view-transition-old(cm)') && css.includes('html:active-view-transition-type(cf,cb)::view-transition-new(cm)'), 'View Transition must bind directional forward/backward types');
   assert.ok(css.includes('@media (prefers-reduced-motion:reduce){html[data-ag-cs-style]{--_sa:none;}@starting-style{.agy-overlay:is([data-ag-cs-model-overlay="1"],[data-ces-ov]){transform:none;}}::view-transition-group(cm),::view-transition-old(cm),::view-transition-new(cm){animation:none !important;}'), 'Reduced motion must disable popover spatial travel and View Transition animations');
@@ -2210,9 +2211,10 @@ test('Model picker open/close spring-bloom CSS and Effort<->Models View Transiti
     let selectedModel = models[1];
     const selectorCtx = {
       modelOptions: models,
+      get selectedModel() { return selectedModel; },
       effortIndex: new Map([
-        ['Gemini 4 Neon', [models[0], models[1]]],
-        ['Claude Opus 5.5', [models[2], models[3]]],
+        ['gemini-4-neon', new Map([['low', models[0]], ['high', models[1]]])],
+        ['claude-opus-5-5', new Map([['low', models[2]], ['high', models[3]]])],
       ]),
     };
     const popoverProps = {
@@ -2231,8 +2233,12 @@ test('Model picker open/close spring-bloom CSS and Effort<->Models View Transiti
     overlay.getBoundingClientRect = () => (panel.getAttribute('data-ces-view') === 'models'
       ? { left: 508, right: 828, top: 711, bottom: 1099, width: 320, height: 388 }
       : { left: 508, right: 819, top: 711, bottom: 806, width: 311, height: 95 });
-    env.addGroupRow(listWrap, 'Gemini 4 Neon', 'High');
-    env.addGroupRow(listWrap, 'Claude Opus 5.5', 'High');
+    const { row: neonRow } = env.addGroupRow(listWrap, 'Gemini 4 Neon', 'High');
+    // Simulate Antigravity v2.35 native Material Symbols checkmark inside span.ml-auto (no .lucide-check class)
+    const chkWrap = env.makeEl('span', { className: 'ml-auto flex shrink-0' });
+    chkWrap.appendChild(env.makeEl('svg'));
+    neonRow.appendChild(chkWrap);
+    const { row: claudeRow } = env.addGroupRow(listWrap, 'Claude Opus 5.5', 'High');
     overlay.appendChild(panel);
     pos.appendChild(overlay);
     env.body.appendChild(pos);
@@ -2274,7 +2280,11 @@ test('Model picker open/close spring-bloom CSS and Effort<->Models View Transiti
     assert.equal(vtCalls[0].cvAttr, 't');
     assert.equal(pos.style.transform, 'translate(508.0px,418.0px)', 'Sync Floating-UI compensation must keep bottom edge locked during VT');
     assert.equal(panel.getAttribute('data-ces-view'), 'models');
-    assert.equal(panel.getAttribute('data-cd'), 'f');
+    assert.equal(panel.hasAttribute('data-cd'), false, 'VT path must not stamp data-cd fallback attr so no redundant post-VT slide replays');
+    assert.equal(neonRow.getAttribute('data-ces-model-selected'), 'true');
+    assert.equal(neonRow.getAttribute('data-ces-has-chk'), '1', 'Native Material Symbols span.ml-auto>svg checkmark must suppress duplicate CSS ::after checkmark');
+    assert.equal(claudeRow.getAttribute('data-ces-model-selected'), 'false');
+    assert.equal(claudeRow.getAttribute('data-ces-has-chk'), '0');
     resolveFin();
     await Promise.resolve();
     await Promise.resolve();
@@ -2286,7 +2296,7 @@ test('Model picker open/close spring-bloom CSS and Effort<->Models View Transiti
     assert.equal(vtCalls.length, 2);
     assert.deepEqual(vtCalls[1].types, ['cb']);
     assert.equal(panel.getAttribute('data-ces-view'), 'effort');
-    assert.equal(panel.getAttribute('data-cd'), 'b');
+    assert.equal(panel.hasAttribute('data-cd'), false);
 
     // Removing panel mid-transition skips active View Transition and cleans attrs
     pos.remove();
